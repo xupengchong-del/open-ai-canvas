@@ -5,6 +5,19 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 后台读取上游模型价格
+
+- 已实现：后台「模型与资源 → 系统模型」新增「同步上游价」按钮，逐个上游读取公开的 `GET {站点根}/api/pricing`，把价格摘要写进渠道模型新增的**仅后台可见**字段 `upstream_price_note`，并在模型列表新增「上游价」列展示；拉取上游模型时也会同步把价格带入导入预览，并在导入新模型时一并写入。
+- 已实现：价格支持三种形态——`per_request`/`per_second` 的固定价、`video_pricing` 的每秒单价（取最低档并在文案标注分辨率）、按 token 计费只有倍率时显示「倍率 Nx」；分组倍率按 `group_ratio.default` 换算，倍率不为 1 时在文案里标注。
+- 已实现：该字段**不进公开投影**（`model_catalog.go` 的 `PublicChannelModel` 不含它），创作端模型选择器读不到，因此不会把进货价暴露给普通用户；刷新只写这一列，不触碰价格档、价格版本与启用状态。
+- 实现位置：解析与格式化 `backend/internal/app/channel_model_upstream_pricing.go`，预览/导入接线 `channel_models_catalog.go`，刷新落库 `repository/finance_channel_models.go`，路由 `handler/finance.go`，界面 `web/src/pages/admin/components/channel-model-manager.tsx`。
+- [x] 验证：`go test ./internal/app/ -run 'Upstream|FormatPrice'` 7 项通过，其中含用**真实上游 suanliai.top 返回条目**做的回归（`¥1.5/次`、`¥0.65/秒`、`¥0.68/秒`、`倍率 0.275x`）；`go test ./internal/database/ ./internal/repository/` 185 项通过。
+- [x] 验证：用**真实开发库副本**跑 `migrate-schema up`，schema 49 → 51、`ready:true`，新列为 `TEXT NOT NULL DEFAULT ''`，3 个渠道 8 个模型数据完好、旧行为空字符串；`tsc --noEmit`、ESLint、`bun run build` 通过。
+- [x] 已确认上游可读：`suanliai.top/api/pricing` 200（550 个模型）、`linkapi.ai/api/pricing` 200（157 个）、`img.yunfei.best/api/pricing` 200（32 个），均无需密钥。
+- [ ] 用户验收：真实后台点「同步上游价」，确认列表「上游价」列出现价格、文案与上游页面一致，且**创作端模型选择器里看不到该价格**（这是本功能的关键边界）。
+- [ ] 用户验收：导入一批新模型后确认价格已随导入写入；上游把价格口径改成汇率换算的 token 模型时，确认显示为「倍率 Nx」而不是错误的人民币金额。
+- [ ] 未验证：本机未安装 `backend/agent-runtime/pi` 的 node 依赖，`internal/app` 的 5 个 `TestCloudAgent*` 用例因 `Cannot find package 'undici'` 失败，与本功能无关，跑 `npm install` 后应恢复。
+
 ## 系统模型「拉取模型」弹窗搜索
 
 - 已实现：后台「模型与资源 → 系统模型」点「拉取模型」后的选择弹窗新增搜索框（按模型标识做大小写不敏感的子串匹配，自动聚焦、可一键清空），因为部分上游端点会返回几百个模型。
