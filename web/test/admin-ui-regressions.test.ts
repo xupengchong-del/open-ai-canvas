@@ -79,17 +79,25 @@ test("channel model fetch requires explicit selection before import", async () =
     ]);
     const component = compactSource(componentSource);
 
-    expect(apiSource).toContain("http.post<{ models: string[] }>(`/admin/channels/${encodeURIComponent(channelId)}/models/fetch`)");
+    expect(apiSource).toContain("http.post<{ models: string[]; upstreamPrices?: Record<string, string> }>(`/admin/channels/${encodeURIComponent(channelId)}/models/fetch`)");
+    expect(apiSource).toContain("http.post<{ updated: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/sync-upstream-prices`)");
     expect(apiSource).toContain("http.post<{ models: string[]; added: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/import`, { models })");
     expect(component).toContain('title="选择要导入的模型"');
     expect(component).toContain("默认已全选");
     expect(component).toContain("setFetchPreviewOpen(true)");
     expect(component).toContain("setSelectedFetchModels(result.models)");
     expect(component).toContain("已选择 {selectedFetchModels.length} / {fetchPreviewModels.length} 个模型");
-    expect(component).toContain("disabled={importing || allFetchModelsSelected}");
-    expect(component).toContain("onClick={() => setSelectedFetchModels(fetchPreviewModels)}");
-    expect(component).toContain("disabled={importing || selectedFetchModels.length === 0}");
-    expect(component).toContain("onClick={() => setSelectedFetchModels([])}");
+    // 弹窗搜索上线后，全选 / 取消选中只作用于当前匹配集合，断言同步到新实现。
+    expect(component).toContain("filterImportModels(fetchPreviewModels, fetchKeyword)");
+    expect(component).toContain("disabled={importing || !visibleFetchModels.length || allVisibleFetchModelsSelected}");
+    expect(component).toContain("onClick={() => setSelectedFetchModels((current) => selectVisibleModels(current, visibleFetchModels))}");
+    expect(component).toContain("disabled={importing || selectedVisibleFetchCount === 0}");
+    expect(component).toContain("onClick={() => setSelectedFetchModels((current) => deselectVisibleModels(current, visibleFetchModels))}");
+    expect(component).toContain("没有匹配");
+    // 上游价只以仅后台可见的列展示，并随导入预览带出。
+    expect(component).toContain('title: "上游价"');
+    expect(component).toContain("item.upstreamPriceNote");
+    expect(component).toContain("syncAdminChannelModelUpstreamPrices(channel.id)");
     expect(component).toContain("取消全选");
     expect(component).toContain("disabled={importing}");
     expect(component).toContain("importAdminChannelModels(channel.id, selectedFetchModels)");
