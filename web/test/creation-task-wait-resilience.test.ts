@@ -54,3 +54,13 @@ test("任务建成即放闸，上一条还在生成时仍可提交下一条", ()
     expect(bindTask).toContain("releaseSubmitGate()");
     expect(bindTask).toContain("setBusy(false)");
 });
+
+test("被误判为失败的历史消息，在后端任务实际成功时能够重新恢复为成功并展示产物", () => {
+    const source = compactSource(moduleGroupSource("pages/create/creation-conversations.ts"));
+    const reconcileLoop = sourceSection(source, "export function reconcileCreationTaskMessages(", "function creationTaskResultUrls(");
+
+    // 关键回归点：过去只允许 status === 'pending' 的消息重敛，导致之前因网络抖动被写成 error 的消息即使后端成功也无法恢复。
+    // 现在放开 message.status === 'error'，并在有成功产物时更新为 status: 'done'。
+    expect(reconcileLoop).toContain('message.status !== "pending" && message.status !== "error"');
+    expect(reconcileLoop).toContain('status: "done" as const');
+});
