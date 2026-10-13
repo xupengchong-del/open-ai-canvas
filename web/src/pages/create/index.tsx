@@ -1005,19 +1005,25 @@ export default function CreatePage() {
             }
             toast.success("记录已删除，素材仍保留");
         };
-        // 失败与已停止的记录直接删；有结果或仍在生成时先确认，避免误删。
-        const hasLiveWork = trimmed.removed.some((item) => item.status === "done" || item.status === "pending" || item.status === "streaming");
+        // 只要记录中包含已成功产物（status=done、有结果链接或存储键）或正在生成的任务，必须弹出确认窗口防误删。
+        const hasLiveWork = trimmed.removed.some((item) =>
+            item.status === "done" ||
+            Boolean(item.resultUrls?.length) ||
+            Boolean(item.resultStorageKeys?.length) ||
+            item.status === "pending" ||
+            item.status === "streaming"
+        );
         if (!hasLiveWork) {
             apply();
             return;
         }
         modal.confirm({
-            className: "workspace-modal workspace-modal-compact",
-            title: "删除这条记录？",
-            content: "会从当前对话移除这条提示词与它的生成结果，已经上传或生成的素材仍保留在资产中。此操作不可撤销。",
-            okText: "删除记录",
+            title: "确定删除这条生成记录？",
+            content: "该记录包含已生成的成果。删除后将从当前会话中移除，但在素材库中仍会保留原素材。此操作不可撤销。",
+            okText: "确定删除",
             okButtonProps: { danger: true },
-            cancelText: "保留",
+            cancelText: "取消",
+            centered: true,
             onOk: apply,
         });
     };
