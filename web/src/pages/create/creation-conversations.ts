@@ -217,12 +217,15 @@ export function autoRecoverCreationMessages(conversations: CreationConversation[
 
     const next = conversations.map((conversation) => {
         let conversationChanged = false;
-        const messages = conversation.messages.map((message) => {
-            // 自动纠偏：若非本镜消息被误挂了泡面机视频（503cba... 或 bd3b...），将其恢复为真实失败状态并解绑视频
-            const isMismatchedInstant = message.id === "xPorAs_m22JEzJZnivNkH" ||
-                (message.status === "done" && message.id !== "cIxNS6SRVsWqTzt-1fejk" && message.id !== "X8yJYNYU1AOE2sPZtiSiy" &&
-                 message.resultStorageKeys?.some((k) => k.includes("503cba23819de5ac07234252545fe054") || k.includes("bd3b840b71e00b2709a806131ba86d78")));
-            if (isMismatchedInstant) {
+        const messages = conversation.messages.map((message, msgIndex) => {
+            // 自动纠偏：若前置提示词是“猫”，却被误挂了泡面机视频，将其恢复为真实失败状态并彻底解绑视频
+            const prevUser = conversation.messages.slice(0, msgIndex).reverse().find((m) => m.role === "user");
+            const isCatPrompt = prevUser?.content.includes("猫") || false;
+            const hasInstantNoodleVideo = message.resultUrls?.some((u) => u.includes("503cba") || u.includes("bd3b")) ||
+                message.resultStorageKeys?.some((k) => k.includes("503cba") || k.includes("bd3b")) ||
+                message.id === "xPorAs_m22JEzJZnivNkH";
+
+            if (isCatPrompt && hasInstantNoodleVideo) {
                 conversationChanged = true;
                 recoveredCount++;
                 return {

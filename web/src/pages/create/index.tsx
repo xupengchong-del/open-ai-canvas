@@ -275,15 +275,12 @@ export default function CreatePage() {
             // 自动深度恢复：若会话中存在未决或错误状态的助手消息，在水合阶段直接向服务端比对已完成任务；
             // 只要后端任务实际上已经成功出片，立即将视频结果静默挂回会话，无需用户点击任何按钮或重新排队生成。
             try {
-                const hasUnresolved = next.some((c) => c.messages.some((m) => m.role === "assistant" && (m.status === "error" || m.status === "pending")));
-                if (hasUnresolved) {
-                    const runtime = await loadCreationRuntime();
-                    const recentTasks = await runtime.listGenerationTasks(30);
-                    const recovery = autoRecoverCreationMessages(next, recentTasks);
-                    if (recovery.recoveredCount > 0) {
-                        next = recovery.conversations;
-                        void saveCreationConversations(next);
-                    }
+                const runtime = await loadCreationRuntime();
+                const recentTasks = await runtime.listGenerationTasks(30);
+                const recovery = autoRecoverCreationMessages(next, recentTasks);
+                if (recovery.recoveredCount > 0) {
+                    next = recovery.conversations;
+                    void saveCreationConversations(next);
                 }
             } catch (err) {
                 console.warn("创作会话初始化恢复失败，将保留已有会话状态", err);
