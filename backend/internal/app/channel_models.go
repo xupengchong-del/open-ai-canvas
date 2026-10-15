@@ -122,6 +122,17 @@ func (s *Service) AdminChannelModels(actor *model.User, channelID string) ([]mod
 			items[index].CapabilityConfig = value
 		}
 	}
+	publicModels := make([]PublicChannelModel, 0, len(items))
+	for _, item := range items {
+		publicModels = append(publicModels, PublicChannelModel{ModelKey: item.ModelKey})
+	}
+	availabilityMap, _ := s.publicModelAvailability([]PublicChannelCatalog{{ID: channelID, Models: publicModels}}, time.Now())
+	for index := range items {
+		key := publicModelAvailabilityKey{channelID: channelID, modelKey: items[index].ModelKey}
+		if avail, ok := availabilityMap[key]; ok {
+			items[index].Availability = avail
+		}
+	}
 	return items, nil
 }
 

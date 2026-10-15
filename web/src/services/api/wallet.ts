@@ -72,6 +72,7 @@ export type ChannelModel = {
     priceVersion: number;
     capabilityVersion?: number;
     capabilityConfig?: import("@/lib/model-capabilities").ModelCapabilityConfig;
+    availability?: import("@/services/api/logical-models").PublicChannelModelAvailability;
     priceTiers: ChannelModelPriceTier[];
     createdAt: string;
     updatedAt: string;

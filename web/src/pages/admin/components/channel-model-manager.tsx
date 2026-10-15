@@ -8,7 +8,7 @@ import { ModelIcon, ModelRecentHealthTrack } from "@/components/model-picker";
 import { modelProtocolDefinition, modelProtocolLabel, type ModelProtocol } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
 import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, syncAdminChannelModelUpstreamPrices, type ChannelModel } from "@/services/api/wallet";
-import type { ModelChannel } from "@/stores/use-config-store";
+import { useConfigStore, type ModelChannel } from "@/stores/use-config-store";
 import { ChannelModelEditor } from "./channel-model-editor";
 import { AdminBatchBar, AdminDataTable, AdminFilterChip, AdminStatusBadge, AdminTableEmpty } from "./admin-ui";
 import { ChannelOrderDialog } from "./channel-order-dialog";
@@ -19,6 +19,7 @@ import { duplicateChannelModelValues, type ChannelModelFormValues } from "./chan
 import { Select } from "@/components/ui/base/select";
 
 export function ChannelModelManager({ channel, onChanged }: { channel: ModelChannel; onChanged: () => void | Promise<void> }) {
+    const config = useConfigStore((state) => state.config);
     const { message, modal } = App.useApp();
     const [items, setItems] = useState<ChannelModel[]>([]);
     const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
@@ -264,7 +265,10 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
             title: "可用性",
             width: 140,
             render: (_, item) => {
-                const availability = channel.modelCosts?.find((cost) => cost.model === item.modelKey)?.availability;
+                const systemChannel = config.channels.find((c) => c.id === channel.id || c.name === channel.name);
+                const matchedCosts = [...(item.availability ? [] : []), ...(channel.modelCosts || []), ...(systemChannel?.modelCosts || [])];
+                const availability = item.availability ||
+                    matchedCosts.find((cost) => cost.model === item.modelKey || cost.model === item.providerModelKey || cost.model === item.displayName)?.availability;
                 const recentResults = availability?.recentResults ?? [];
                 const successCount = recentResults.filter(Boolean).length;
                 const hasRuns = recentResults.length > 0;
