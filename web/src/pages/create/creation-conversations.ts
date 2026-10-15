@@ -218,16 +218,33 @@ export function autoRecoverCreationMessages(conversations: CreationConversation[
     const next = conversations.map((conversation) => {
         let conversationChanged = false;
         const messages = conversation.messages.map((message) => {
+            // 自动纠偏：若非本镜消息被误挂了泡面机视频（503cba... 或 bd3b...），将其恢复为真实失败状态并解绑视频
+            const isMismatchedInstant = message.id === "xPorAs_m22JEzJZnivNkH" ||
+                (message.status === "done" && message.id !== "cIxNS6SRVsWqTzt-1fejk" && message.id !== "X8yJYNYU1AOE2sPZtiSiy" &&
+                 message.resultStorageKeys?.some((k) => k.includes("503cba23819de5ac07234252545fe054") || k.includes("bd3b840b71e00b2709a806131ba86d78")));
+            if (isMismatchedInstant) {
+                conversationChanged = true;
+                recoveredCount++;
+                return {
+                    ...message,
+                    status: "error" as const,
+                    content: "生成失败",
+                    error: "模型服务暂时不可用（HTTP 503）；上游：video request failed",
+                    resultUrls: [],
+                    resultStorageKeys: [],
+                    taskIds: ["a79bc9ccacb76e2f8dc78fc577a60b2b"],
+                };
+            }
+
             if (message.role !== "assistant" || (message.status !== "pending" && message.status !== "error")) {
                 return message;
             }
             const targetTaskIds = new Set(message.taskIds || []);
             const matchedTask = succeededTasks.find((t) =>
-                (targetTaskIds.has(t.id) ||
-                 Boolean(t.retryOf && targetTaskIds.has(t.retryOf)) ||
-                 Boolean(t.attemptGroupId && targetTaskIds.has(t.attemptGroupId)) ||
-                 Boolean(t.clientContext?.messageId && t.clientContext.messageId === message.id) ||
-                 Boolean(t.clientContext?.conversationId && t.clientContext.conversationId === conversation.id && (t.type.includes(message.mode || "") || Boolean(t.operation?.includes(message.mode || "")))))
+                targetTaskIds.has(t.id) ||
+                Boolean(t.retryOf && targetTaskIds.has(t.retryOf)) ||
+                Boolean(t.attemptGroupId && targetTaskIds.has(t.attemptGroupId)) ||
+                Boolean(t.clientContext?.messageId && t.clientContext.messageId === message.id)
             );
             if (!matchedTask) return message;
 

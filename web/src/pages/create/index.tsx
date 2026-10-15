@@ -1068,8 +1068,7 @@ export default function CreatePage() {
                 (targetTaskIds.has(t.id) ||
                  Boolean(t.retryOf && targetTaskIds.has(t.retryOf)) ||
                  Boolean(t.attemptGroupId && targetTaskIds.has(t.attemptGroupId)) ||
-                 Boolean(t.clientContext?.messageId && t.clientContext.messageId === item.id) ||
-                 Boolean(t.clientContext?.conversationId && t.clientContext.conversationId === activeConversation?.id && (t.type.includes(item.mode || "") || Boolean(t.operation?.includes(item.mode || ""))))) &&
+                 Boolean(t.clientContext?.messageId && t.clientContext.messageId === item.id)) &&
                 t.status === "succeeded"
             );
             if (matchedTask && activeConversation) {
