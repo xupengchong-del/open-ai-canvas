@@ -157,10 +157,7 @@ export function AssetCover({ asset, selected, isTrash = false, onSelect, onOpen,
                 {isTrash ? <span className="assets-cover-badge is-category !bg-amber-500/85 !text-white">回收站</span> : asset.kind === "entity" ? null : <span className="assets-cover-badge is-category">{assetCategoryLabel(asset.category)}</span>}
                 {storageKey ? (
                     <span
-                        className={cn(
-                            "assets-cover-badge !font-medium",
-                            storageLoc === "oss" ? "!bg-sky-500/85 !text-white" : storageLoc === "server" ? "!bg-emerald-600/85 !text-white" : "!bg-amber-600/85 !text-white",
-                        )}
+                        className={cn("assets-cover-badge !font-medium", storageLoc === "oss" ? "!bg-sky-500/85 !text-white" : storageLoc === "server" ? "!bg-emerald-600/85 !text-white" : "!bg-amber-600/85 !text-white")}
                         title={resourceStorageTitle(storageKey)}
                     >
                         {resourceStorageLabel(storageKey)}

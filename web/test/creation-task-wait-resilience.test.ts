@@ -20,7 +20,7 @@ test("查询通道抖动时不再把仍在推进的任务提前判失败", () =>
 
     // 回归点：曾经连续失败 5 次就 throw，导致后端还在跑、前端已经报「网络异常」。
     // 现在只允许降频继续等待，不允许在查询失败分支里提前退出。
-    const failureBranch = sourceSection(waitLoop, "lastQueryError = error;", "if (task.status === \"succeeded\")");
+    const failureBranch = sourceSection(waitLoop, "lastQueryError = error;", 'if (task.status === "succeeded")');
     expect(failureBranch).not.toContain("throw");
     expect(failureBranch).toContain("continue");
     // 降频而不是终止：失败次数达标后拉长间隔，保留任务直到整体超时。

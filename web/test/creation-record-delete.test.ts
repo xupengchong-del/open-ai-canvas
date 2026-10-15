@@ -42,11 +42,7 @@ test("未知 id 不产生删除结果", () => {
 });
 
 test("结果消息前没有用户提示时只删除它自己", () => {
-    const orphan: CreationMessage[] = [
-        message("a0", "assistant", { mode: "video", status: "error" }),
-        message("u1", "user", { mode: "video" }),
-        message("a1", "assistant", { mode: "video", status: "error" }),
-    ];
+    const orphan: CreationMessage[] = [message("a0", "assistant", { mode: "video", status: "error" }), message("u1", "user", { mode: "video" }), message("a1", "assistant", { mode: "video", status: "error" })];
     expect(removeCreationRecord(orphan, "a0")?.messages.map((item) => item.id)).toEqual(["u1", "a1"]);
 });
 
