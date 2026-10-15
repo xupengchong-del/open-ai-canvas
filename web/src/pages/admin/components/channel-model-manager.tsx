@@ -4,7 +4,7 @@ import type { ColumnsType } from "antd/es/table";
 import { CircleDollarSign, Copy, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
-import { ModelIcon } from "@/components/model-picker";
+import { ModelIcon, ModelRecentHealthTrack } from "@/components/model-picker";
 import { modelProtocolDefinition, modelProtocolLabel, type ModelProtocol } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
 import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, syncAdminChannelModelUpstreamPrices, type ChannelModel } from "@/services/api/wallet";
@@ -260,6 +260,24 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                 ),
         },
         { title: "规格成本价 / 销售价 / 利润率", width: 310, render: (_, item) => <ChannelModelCostSummary item={item} /> },
+        {
+            title: "可用性",
+            width: 140,
+            render: (_, item) => {
+                const availability = channel.modelCosts?.find((cost) => cost.model === item.modelKey)?.availability;
+                const recentResults = availability?.recentResults ?? [];
+                const successCount = recentResults.filter(Boolean).length;
+                const hasRuns = recentResults.length > 0;
+                return (
+                    <div className="flex flex-col gap-1 py-0.5">
+                        <ModelRecentHealthTrack availability={availability} />
+                        <span className="text-[11px] text-foreground/45 tabular-nums">
+                            {hasRuns ? `${successCount}/${recentResults.length} 成功` : "暂无调用"}
+                        </span>
+                    </div>
+                );
+            },
+        },
         { title: "版本", dataIndex: "priceVersion", width: 75, render: (value) => `v${value}` },
         { title: "状态", dataIndex: "enabled", width: 85, render: (enabled) => <AdminStatusBadge label={enabled ? "启用" : "停用"} tone={enabled ? "success" : "neutral"} /> },
         {
