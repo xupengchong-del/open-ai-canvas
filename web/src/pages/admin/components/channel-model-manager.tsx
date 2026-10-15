@@ -14,7 +14,7 @@ import { AdminBatchBar, AdminDataTable, AdminFilterChip, AdminStatusBadge, Admin
 import { ChannelOrderDialog } from "./channel-order-dialog";
 import { ChannelModelCostSummary } from "./channel-model-cost-summary";
 import { ChannelModelRepriceDialog } from "./channel-model-reprice-dialog";
-import { deselectVisibleModels, filterImportModels, selectVisibleModels } from "./channel-model-import-selection";
+import { deselectVisibleModels, filterImportModels, normalizeFetchModelKey, selectExistingImportModels, selectVisibleModels } from "./channel-model-import-selection";
 import { duplicateChannelModelValues, type ChannelModelFormValues } from "./channel-model-editor-form";
 import { Select } from "@/components/ui/base/select";
 
@@ -98,7 +98,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                 return;
             }
             setFetchPreviewModels(result.models);
-            setSelectedFetchModels(result.models);
+            setSelectedFetchModels(selectExistingImportModels(result.models, items.flatMap((item) => [item.modelKey, item.providerModelKey].filter(Boolean))));
             setFetchPrices(Object.fromEntries(Object.entries(result.upstreamPrices || {}).map(([name, note]) => [normalizeFetchModelKey(name), note])));
             setFetchPreviewOpen(true);
         } catch (error) {
@@ -507,7 +507,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                 ]}
             >
                 <div className="space-y-3">
-                    <p className="m-0 text-sm text-foreground/65">上游共返回 {fetchPreviewModels.length} 个模型。默认已全选，可批量全选或取消全选；已存在的模型不会重复导入。</p>
+                    <p className="m-0 text-sm text-foreground/65">上游共返回 {fetchPreviewModels.length} 个模型。默认勾选已存在的模型，新模型默认不勾选；可批量全选或取消全选，已存在的模型不会重复导入。</p>
                     <Input
                         allowClear
                         autoFocus
@@ -588,11 +588,4 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
 
 function capabilityLabel(value: ChannelModel["capability"]) {
     return { text: "文本", image: "图片", video: "视频", audio: "音频", "": "待配置" }[value];
-}
-
-function normalizeFetchModelKey(value: string) {
-    return value
-        .trim()
-        .replace(/^models\//, "")
-        .toLowerCase();
 }

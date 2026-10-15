@@ -83,9 +83,9 @@ test("channel model fetch requires explicit selection before import", async () =
     expect(apiSource).toContain("http.post<{ updated: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/sync-upstream-prices`)");
     expect(apiSource).toContain("http.post<{ models: string[]; added: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/import`, { models })");
     expect(component).toContain('title="选择要导入的模型"');
-    expect(component).toContain("默认已全选");
+    expect(component).toContain("默认勾选已存在的模型，新模型默认不勾选");
     expect(component).toContain("setFetchPreviewOpen(true)");
-    expect(component).toContain("setSelectedFetchModels(result.models)");
+    expect(component).toContain("setSelectedFetchModels(selectExistingImportModels(result.models,");
     expect(component).toContain("已选择 {selectedFetchModels.length} / {fetchPreviewModels.length} 个模型");
     // 弹窗搜索上线后，全选 / 取消选中只作用于当前匹配集合，断言同步到新实现。
     expect(component).toContain("filterImportModels(fetchPreviewModels, fetchKeyword)");
