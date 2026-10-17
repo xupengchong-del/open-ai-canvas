@@ -183,6 +183,9 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_session_cache   shared:SSL:10m;
 
+    # 用户在浏览器误敲 http:// 时，自动 301 重定向到 https://
+    error_page 497 =301 https://\$host:3050\$request_uri;
+
     # 业务配置与素材上传上限与仓库内 nginx.conf 保持一致。
     client_max_body_size 1024m;
 
