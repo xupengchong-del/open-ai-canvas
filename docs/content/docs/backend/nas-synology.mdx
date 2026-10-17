@@ -115,3 +115,27 @@ docker compose exec -T postgres psql -U open_ai_canvas -d open_ai_canvas \
 sqlite3 .local/project-workbench-debug/open_ai_canvas.db \
   "select id,length(api_key),md5(api_key) from model_channels order by id"
 ```
+
+## 反向同步：把 NAS 上的模型配置拉回本机
+
+`sync-api` 是单向的（本机 → NAS）。调试时在 NAS 后台页面上调好的模型参数（协议、能力配置、
+上游价格备注等），可以用 `pull-models` 拉回本机开发库：
+
+```bash
+NAS_ADMIN_PASSWORD=你的后台密码 ./nas-deploy.sh pull-models --dry-run   # 先预览
+NAS_ADMIN_PASSWORD=你的后台密码 ./nas-deploy.sh pull-models             # 真正写库
+```
+
+| 参数 | 作用 |
+| --- | --- |
+| `--dry-run` | 只打印「新增 / 更新」清单，不写库 |
+| `--scope=system\|user\|all` | 渠道作用域，默认 `system` |
+| `--channel=CHANNEL_000001` | 只拉某个渠道 |
+| `NAS_ADMIN_USER` | NAS 后台账号，默认 `xupc` |
+
+边界：
+
+- 只动 `channel_models` 表，账号、渠道密钥、对象存储配置都不碰；需要那些仍然用 `sync-api` 单向推送。
+- 按 `id` 合并：NAS 有本机没有 → 插入；两边都有 → 用 NAS 覆盖本机；NAS 上已停用的模型，本机同步为同样状态。
+- 实现拆成两个脚本，方便单独用：[fetch-nas-models.py](scripts/nas/fetch-nas-models.py) 负责只读抓取（`GET` 接口），
+  [apply-nas-models.py](scripts/nas/apply-nas-models.py) 负责按 `id` 合并落库。

@@ -5,6 +5,7 @@
 #   ./nas-deploy.sh                 更新 NAS 上的程序：拉代码 → 重建镜像 → 重启 → 健康检查
 #   ./nas-deploy.sh deploy          同上；首次运行自动初始化（建目录、生成 .env、克隆仓库、签自签证书）
 #   ./nas-deploy.sh sync-api        把本机开发库的模型渠道 / 密钥 / 管理员账号同步到 NAS
+#   ./nas-deploy.sh pull-models     反向操作：把 NAS 上的模型配置拉回本机开发库（--dry-run 预览）
 #   ./nas-deploy.sh status          容器状态与版本
 #   ./nas-deploy.sh logs [服务名]   查看日志，默认 backend
 #   ./nas-deploy.sh shell           登录 NAS shell
@@ -34,6 +35,9 @@ BRANCH="${BRANCH:-local/daily}"
 PUBLIC_PORT="${PUBLIC_PORT:-3050}"
 INTERNAL_PORT="${INTERNAL_PORT:-3051}"
 FORCE_BUILD="${FORCE_BUILD:-0}"
+# pull-models 需要登录 NAS 后台；默认用开发库里的 admin 账号，可用环境变量覆盖。
+NAS_ADMIN_USER="${NAS_ADMIN_USER:-xupc}"
+NAS_ADMIN_PASSWORD="${NAS_ADMIN_PASSWORD:-}"
 
 bold() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 info() { printf '    %s\n' "$1"; }
@@ -393,6 +397,58 @@ SCRIPT
   info "用开发机上原来的账号密码登录 https://$NAS_HOST:$PUBLIC_PORT"
 }
 
+# ---------- 从 NAS 拉取模型配置 ----------
+
+cmd_pull_models() {
+  local db input_file dry_run=0 scope="system" channel=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry_run=1 ;;
+      --scope=*) scope="${arg#*=}" ;;
+      --channel=*) channel="${arg#*=}" ;;
+      *) die "未知参数：$arg（支持 --dry-run / --scope=system / --channel=CHANNEL_000001）" ;;
+    esac
+  done
+  db="$REPO_ROOT/.local/project-workbench-debug/open_ai_canvas.db"
+  [ -f "$db" ] || die "找不到本机开发数据库：$db"
+
+  [ -n "$NAS_ADMIN_PASSWORD" ] || die "缺少 NAS 后台密码：运行时带上 NAS_ADMIN_PASSWORD=你的密码 ./nas-deploy.sh pull-models"
+
+  if [ -z "$NAS_ADMIN_USER" ]; then
+    NAS_ADMIN_USER="$(sqlite3 "$db" "SELECT username FROM users WHERE role='admin' AND status='active' ORDER BY created_at LIMIT 1")"
+    [ -n "$NAS_ADMIN_USER" ] || die "开发库里没有启用的管理员账号"
+  fi
+
+  bold "从 NAS 拉取模型配置"
+  info "来源: https://$NAS_HOST:$PUBLIC_PORT"
+  info "作用域: $scope  渠道: ${channel:-全部}"
+  info "目标: ${db#$REPO_ROOT/}"
+
+  input_file="$(mktemp)"
+  local fetch_err
+  if ! fetch_err="$(python3 "$REPO_ROOT/scripts/nas/fetch-nas-models.py" \
+      --host "$NAS_HOST" --port "$PUBLIC_PORT" \
+      --username "$NAS_ADMIN_USER" --password "$NAS_ADMIN_PASSWORD" \
+      --scope "$scope" ${channel:+--channel "$channel"} > "$input_file" 2>&1)"; then
+    rm -f "$input_file"
+    printf '%s\n' "$fetch_err" | sed 's/^/    /'
+    die "抓取 NAS 模型失败（可用 NAS_ADMIN_USER / NAS_ADMIN_PASSWORD 覆盖登录账号）"
+  fi
+
+  local count
+  count="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["models"]))' "$input_file")"
+  info "抓到 $count 个模型"
+
+  local apply_args=("$REPO_ROOT/scripts/nas/apply-nas-models.py" --db "$db" --input "$input_file")
+  [ "$dry_run" = "1" ] && apply_args+=(--dry-run)
+  python3 "${apply_args[@]}" || { rm -f "$input_file"; die "回灌本机数据库失败"; }
+  rm -f "$input_file"
+
+  [ "$dry_run" = "1" ] && { bold "预览结束"; info "去掉 --dry-run 才会真正写库"; return 0; }
+  bold "完成"
+  info "NAS 的模型配置已同步到本机（渠道与密钥未改动）"
+}
+
 # ---------- 其它 ----------
 
 cmd_status() {
@@ -430,6 +486,7 @@ main() {
   case "${1:-deploy}" in
     deploy|update) cmd_deploy ;;
     sync-api) cmd_sync_api ;;
+    pull-models) shift; cmd_pull_models "$@" ;;
     status) cmd_status ;;
     logs) shift; cmd_logs "${1:-backend}" ;;
     shell) cmd_shell ;;
