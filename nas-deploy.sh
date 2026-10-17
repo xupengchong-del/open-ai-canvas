@@ -350,7 +350,7 @@ if ! compose ps postgres 2>/dev/null | grep -q running; then
 fi
 echo '--- 目标表结构 ---'
 compose exec -T postgres psql -U open_ai_canvas -d open_ai_canvas -At -F '|' -c \\
-  \"select table_name, column_name, data_type from information_schema.columns where table_schema='public' and table_name in ('users','model_channels','channel_models','system_settings') order by table_name, ordinal_position\"
+  \"select table_name, column_name, data_type from information_schema.columns where table_schema='public' and table_name in ('users','model_channels','channel_models','system_settings','storage_locations','user_oss_settings') order by table_name, ordinal_position\"
 "
   local schema_txt
   schema_txt="$(remote <<< "$script")" || die "读取 NAS 数据库结构失败"

@@ -13,8 +13,8 @@ target-schema.txt 每行形如 "table|column|data_type"，由 NAS 上的 Postgre
 import sqlite3
 import sys
 
-# 同步顺序：先账号，再渠道，最后渠道下的模型（外键指向 users / model_channels）。
-TABLES = ["users", "model_channels", "channel_models", "system_settings"]
+# 同步顺序：先账号，再渠道，最后渠道下的模型、系统设置及存储位置（外键指向 users / model_channels）。
+TABLES = ["users", "model_channels", "channel_models", "system_settings", "storage_locations", "user_oss_settings"]
 
 
 def load_target_schema(path):
@@ -25,7 +25,7 @@ def load_target_schema(path):
             if not line or line.count("|") != 2:
                 continue
             table, column, data_type = line.split("|")
-            schema.setdefault(table, {})[column] = data_type
+            schema.setdefault(table.strip(), {})[column.strip()] = data_type.strip()
     return schema
 
 
