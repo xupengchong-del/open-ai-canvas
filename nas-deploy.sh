@@ -65,20 +65,36 @@ load_connection() {
 
 # 远程执行：第一行凭据，其余为脚本正文
 remote() {
-  # 实时透传远端输出；凭据走第一行，脚本走其余 stdin。
-  # NAS 满载时偶发「Permission denied」，按次退避重试，避免整轮部署白跑。
-  local script attempt
+  # 两段式：先把脚本上传到 NAS，再用 sudo 以 root 执行整段。
+  # 这样 sudo 只认证一次、不依赖时间戳，脚本内的管道与重定向 stdin 也不受影响。
+  local script attempt rc
   script="$(cat)"
+  if [ "${NAS_DEBUG:-0}" = "1" ]; then
+    printf '%s
+' "$script" | sed -E "s/'[A-Za-z0-9+/=]{40,}'/'<base64 数据已省略>'/g" >&2
+  fi
   for attempt in 1 2 3 4; do
-    if { printf '%s\n' "$NAS_PASSWORD"; printf '%s\n' "$script"; } | sshpass -e ssh -p "$NAS_SSH_PORT" \
+    rc=0
+    { printf '%s
+' "$NAS_PASSWORD"; printf '%s
+' "$script"; } | sshpass -e ssh -p "$NAS_SSH_PORT" \
         -o PreferredAuthentications=password -o PubkeyAuthentication=no \
         -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o NumberOfPasswordPrompts=1 \
-        "$NAS_USER@$NAS_HOST" 'read -r SUDO_PASSWORD; export SUDO_PASSWORD; /bin/sh -s' 2>&1 \
-      | grep -v -e 'post-quantum' -e 'store now, decrypt later' -e 'may need to be upgraded'; then
-      return 0
+        "$NAS_USER@$NAS_HOST" 'read -r SUDO_PASSWORD; umask 077; cat > "$HOME/.canvas-job.sh"' >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      printf '%s
+' "$NAS_PASSWORD" | sshpass -e ssh -p "$NAS_SSH_PORT" \
+          -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+          -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o NumberOfPasswordPrompts=1 \
+          "$NAS_USER@$NAS_HOST" 'read -r SUDO_PASSWORD; printf "%s
+" "$SUDO_PASSWORD" | sudo -S -p "" sh "$HOME/.canvas-job.sh"; rc=$?; rm -f "$HOME/.canvas-job.sh"; exit $rc' 2>&1 \
+        | grep -v -e 'post-quantum' -e 'store now, decrypt later' -e 'may need to be upgraded'
+      rc=${PIPESTATUS[0]}
+      [ "$rc" -eq 0 ] && return 0
     fi
     if [ "$attempt" -lt 4 ]; then
-      printf '    SSH 连接被拒（第 %s 次），5 秒后重试…\n' "$attempt" >&2
+      printf '    第 %s 次执行失败（rc=%s），5 秒后重试…
+' "$attempt" "$rc" >&2
       sleep 5
     fi
   done
@@ -86,14 +102,15 @@ remote() {
 }
 
 prelude() {
+  # 脚本整体以 root 执行，因此内部不需要再 sudo。
   cat <<PRELUDE
 export PATH=/var/packages/Git/target/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/syno/bin
 APP='$APP_DIR'
 DATA='$DATA_DIR'
 OPS="\$DATA/ops"
-printf '%s\n' "\$SUDO_PASSWORD" | sudo -S -p '' -v >/dev/null 2>&1 || { echo 'sudo 认证失败'; exit 1; }
-d() { sudo -n "\$@"; }
-compose() { d docker compose --env-file "\$APP/.env" -f "\$APP/docker-compose.deploy.yml" -f "\$APP/docker-compose.build.yml" -f "\$OPS/compose.tls.yml" "\$@"; }
+DOCKER=/usr/local/bin/docker
+d() { "\$@"; }
+compose() { cd "\$APP" && "\$DOCKER" compose --env-file "\$APP/.env" -f "\$APP/docker-compose.deploy.yml" -f "\$APP/docker-compose.build.yml" -f "\$OPS/compose.tls.yml" "\$@"; }
 PRELUDE
 }
 
@@ -117,6 +134,7 @@ CANVAS_PUBLIC_BASE_URL=https://$NAS_HOST:$PUBLIC_PORT
 CANVAS_REGISTRATION_ENABLED=false
 CANVAS_ALLOW_PRIVATE_UPSTREAMS=false
 CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS=
+CANVAS_UPDATER_SOCKET_DIR=$DATA_DIR/updater
 CANVAS_WORKER_CONCURRENCY=2
 CANVAS_CHANNEL_CONCURRENCY=2
 GOPROXY=https://goproxy.cn,direct
@@ -208,14 +226,15 @@ $(prelude)
 set -e
 
 echo '--- 目录 ---'
-d mkdir -p "\$APP" "\$DATA/ops/certs"
+d mkdir -p "\$APP" "\$DATA/ops/certs" "\$DATA/updater"
 # 群晖共享文件夹默认带 Windows ACL：容器内会把文件看成 000 权限。
 # 对代码目录与 ops 目录清掉 ACL，子文件才按普通 Linux 权限继承。
-d synoacltool -del "\$APP" >/dev/null 2>&1 || true
-d synoacltool -del "\$DATA/ops" >/dev/null 2>&1 || true
-d synoacltool -del "\$DATA/ops/certs" >/dev/null 2>&1 || true
+synoacltool -del "\$APP" >/dev/null 2>&1 || true
+synoacltool -del "\$DATA/ops" >/dev/null 2>&1 || true
+synoacltool -del "\$DATA/ops/certs" >/dev/null 2>&1 || true
+synoacltool -del "\$DATA/updater" >/dev/null 2>&1 || true
 # 去掉 ACL 后真实模式是 000，必须显式恢复，否则连 cd 都进不去。
-d chmod 755 "\$APP" "\$DATA" "\$DATA/ops" "\$DATA/ops/certs" 2>/dev/null || true
+d chmod 755 "\$APP" "\$DATA" "\$DATA/ops" "\$DATA/ops/certs" "\$DATA/updater" 2>/dev/null || true
 d chown -R "\$(id -un)":users "\$APP" "\$DATA" 2>/dev/null || true
 
 echo '--- 代码 ---'
@@ -230,11 +249,11 @@ else
   cd /tmp
   d rm -rf "\$APP"
   d mkdir -p "\$APP"
-  d synoacltool -del "\$APP" >/dev/null 2>&1 || true
+  synoacltool -del "\$APP" >/dev/null 2>&1 || true
   d chown "\$(id -un)":users "\$APP"
   for mirror in 'https://ghfast.top/https://github.com' 'https://ghproxy.net/https://github.com' 'https://github.com'; do
     rm -rf "\$APP"; mkdir -p "\$APP"
-    d synoacltool -del "\$APP" >/dev/null 2>&1 || true
+    synoacltool -del "\$APP" >/dev/null 2>&1 || true
     d chmod 755 "\$APP"; d chown "\$(id -un)":users "\$APP"
     echo "    克隆自 \$mirror"
     if GIT_TERMINAL_PROMPT=0 git clone --depth 1 --single-branch --branch '$BRANCH' "\$mirror/xupengchong-del/open-ai-canvas.git" "\$APP" >/dev/null 2>&1; then

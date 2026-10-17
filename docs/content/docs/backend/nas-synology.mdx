@@ -39,6 +39,7 @@
 | --- | --- |
 | `/volume1/docker/open-ai-canvas` | git 工作副本（分支 `local/daily`） |
 | `/volume1/docker/open-ai-canvas-data/ops` | TLS 编排与证书（不进 git，不受代码更新影响） |
+| `/volume1/docker/open-ai-canvas-data/updater` | Host Updater 的 socket 目录占位（本部署不装更新器，但 compose 要求目录存在） |
 | Docker 命名卷 | PostgreSQL、Redis、后端数据（含上传素材与 `.settings-key`）、web 发布目录 |
 
 数据使用命名卷而不是宿主目录，是为了让容器自己管理属主，避免群晖 ACL 与 uid 映射问题。
@@ -92,3 +93,25 @@ FORCE_BUILD=1 ./nas-deploy.sh # 强制重建镜像
 | `git clone` 报 `RPC failed` | GitHub 大包传输不稳定，改用镜像（脚本按 ghfast.top → ghproxy.net → 直连顺序重试） |
 | 健康检查 502 | web 容器未就绪或 TLS 容器证书路径错误，`./nas-deploy.sh logs tls` |
 | 登录后模型为空 | 未执行 `sync-api`，或同步时数据库表尚未建好（先跑一次 deploy） |
+
+## 部署后的核对
+
+```bash
+curl -sk https://192.168.1.56:3050/api/health        # 期望 {"code":0,...,"ready":true}
+curl -sk https://192.168.1.56:3050/ | head -5        # 期望返回 SPA 首页
+./nas-deploy.sh status                               # 六个容器 healthy
+./nas-deploy.sh logs backend                         # 确认没有解密/数据库错误
+```
+
+`/api/models` 等业务接口需要登录后访问；健康检查只能证明入口与进程可用，登录、SSE、任务生成和素材访问需要登录后逐一验证。
+
+同步结果核对（密文与密钥必须同时一致，否则渠道密钥无法解密）：
+
+```bash
+# NAS 侧
+docker compose exec -T postgres psql -U open_ai_canvas -d open_ai_canvas \
+  -At -c "select id,length(api_key),md5(api_key) from model_channels order by id"
+# 本机开发库对照
+sqlite3 .local/project-workbench-debug/open_ai_canvas.db \
+  "select id,length(api_key),md5(api_key) from model_channels order by id"
+```
