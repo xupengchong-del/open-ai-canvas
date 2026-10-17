@@ -1,0 +1,94 @@
+# 群晖 NAS 部署（DS725+ / DSM 7.4）
+
+个人 NAS 场景的源码构建部署：代码从自己的 fork 拉取，镜像在 NAS 本地构建，更新由开发机一条命令触发。
+
+## 与官方 Docker 方案的区别
+
+仓库默认的服务器部署使用已发布 Release 镜像 + `docker-compose.deploy.yml` + Host Updater，支持后台在线更新。本方案面向「跑自己的定制代码」，因此：
+
+| 项目 | 官方 Release 部署 | 本方案（NAS 源码构建） |
+| --- | --- | --- |
+| 镜像 | GHCR 已发布镜像，固定 digest | NAS 本地 `docker compose build` |
+| 代码来源 | 仓库 tag | 自己 fork 的分支（默认 `local/daily`） |
+| 更新入口 | 后台「系统配置 → 系统更新」 | 开发机运行 `./nas-deploy.sh` |
+| Host Updater | 安装 | 不安装（源码构建不受其管理） |
+| 数据库 | PostgreSQL + Redis | 同左，命名卷持久化 |
+
+镜像不由 Host Updater 管理，因此后台的在线更新入口对本部署不生效；升级、备份、回退都需要在开发机执行命令完成。
+
+## 目标环境
+
+- 群晖 DS725+（AMD Ryzen R1600，x86_64，4 GB 内存，DSM 7.4.1）
+- Container Manager（Docker 24.0.2）+ Git 套件
+- NAS 无法直连 Docker Hub，需要镜像加速（见下文）
+
+## 一次性准备
+
+1. **套件**：在套件中心安装 Container Manager 和 Git。
+2. **SSH**：控制面板 → 终端机和 SNMP → 启用 SSH（默认 22 端口）。
+3. **镜像加速**：Container Manager 无法从本机网络访问 Docker Hub 时，在
+   `/var/packages/ContainerManager/etc/dockerd.json` 的 `registry-mirrors` 中加入可用加速地址，
+   然后 `synopkg restart ContainerManager`。缺少加速会表现为 `docker pull` 超时。
+4. **群晖 ACL**：共享文件夹默认带 Windows ACL，容器内会把文件看成 `000` 权限，
+   导致构建时 `Permission denied`。部署脚本会对代码目录与 ops 目录执行
+   `synoacltool -del` 并恢复 `chmod 755`；新增目录时同样需要处理。
+
+## 目录布局
+
+| 路径 | 用途 |
+| --- | --- |
+| `/volume1/docker/open-ai-canvas` | git 工作副本（分支 `local/daily`） |
+| `/volume1/docker/open-ai-canvas-data/ops` | TLS 编排与证书（不进 git，不受代码更新影响） |
+| Docker 命名卷 | PostgreSQL、Redis、后端数据（含上传素材与 `.settings-key`）、web 发布目录 |
+
+数据使用命名卷而不是宿主目录，是为了让容器自己管理属主，避免群晖 ACL 与 uid 映射问题。
+
+## 部署与更新
+
+开发机（macOS）上运行，需要 `sshpass`：
+
+```bash
+./nas-deploy.sh              # 拉代码 → 构建镜像 → 重启 → 健康检查
+./nas-deploy.sh deploy       # 同上（首次会自动初始化）
+./nas-deploy.sh status       # 容器状态与版本
+./nas-deploy.sh logs web     # 查看某个服务日志
+FORCE_BUILD=1 ./nas-deploy.sh # 强制重建镜像
+```
+
+脚本读取 `NAS_INFO_FILE`（默认 `~/myProg/Nas726.xpc`）中的连接信息，支持
+`NAS_HOST/NAS_USER/NAS_PASSWORD/NAS_SSH_PORT` 或 `IP/UserName/PWD` 两种写法，
+也接受同名环境变量覆盖。凭据只在 SSH 通道内使用，不写入仓库、不打印。
+
+已部署提交与当前提交一致时脚本跳过镜像构建，直接重启；`FORCE_BUILD=1` 可强制重建。
+
+## HTTPS
+
+对外端口默认 `3050`，由 `tls` 容器用自签证书终止 TLS，再转发到 web 容器（`127.0.0.1:3051`）。
+之所以不用 DSM 反向代理：DSM 的代理默认开启缓冲，会破坏文本任务的 SSE 流式输出；
+自带的 TLS 层对该路径关闭了 `proxy_buffering`。
+
+自签证书首次访问会有浏览器告警。要换可信证书，替换
+`/volume1/docker/open-ai-canvas-data/ops/certs/server.crt` 与 `server.key` 后重跑部署命令。
+
+## 同步开发机的模型 API 配置
+
+```bash
+./nas-deploy.sh sync-api
+```
+
+把本机开发库（`.local/project-workbench-debug/open_ai_canvas.db`）中的
+`users`、`model_channels`、`channel_models`、`system_settings` 导出为幂等 SQL 导入 NAS，
+并同步加密密钥 `.settings-key`；渠道密钥密文由同一把密钥解密，导入后即可直接使用。
+命令会按目标库真实列类型生成字面量，目标库缺少的列会自动跳过。
+
+同步完成后用开发机上原来的账号密码登录。
+
+## 排障
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `docker pull` 超时 | 镜像加速未配置，或加速地址失效 |
+| 构建报 `Permission denied` | 群晖 ACL 生效，对目录执行 `synoacltool -del` 后 `chmod 755` |
+| `git clone` 报 `RPC failed` | GitHub 大包传输不稳定，改用镜像（脚本按 ghfast.top → ghproxy.net → 直连顺序重试） |
+| 健康检查 502 | web 容器未就绪或 TLS 容器证书路径错误，`./nas-deploy.sh logs tls` |
+| 登录后模型为空 | 未执行 `sync-api`，或同步时数据库表尚未建好（先跑一次 deploy） |

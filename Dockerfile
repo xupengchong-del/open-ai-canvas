@@ -5,13 +5,15 @@ FROM --platform=$BUILDPLATFORM oven/bun:1.3.9 AS web-build
 
 WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
-RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache ${NPM_REGISTRY:+--registry=${NPM_REGISTRY}}
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY README.md /app/README.md
 COPY assets /app/assets
 COPY web ./
 ARG VITE_TLDRAW_LICENSE_KEY
+# 可选：依赖镜像源（例如国内构建用 https://registry.npmmirror.com）。留空则用默认源。
+ARG NPM_REGISTRY
 ARG BUILD_VERSION
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIME=unknown

@@ -28,3 +28,4 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_TLDRAW_LICENSE_KEY: ${VITE_TLDRAW_LICENSE_KEY:-}
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
