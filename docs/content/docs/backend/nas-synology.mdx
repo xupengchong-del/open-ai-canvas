@@ -121,10 +121,25 @@ sqlite3 .local/project-workbench-debug/open_ai_canvas.db \
 `sync-api` 是单向的（本机 → NAS）。调试时在 NAS 后台页面上调好的模型参数（协议、能力配置、
 上游价格备注等），可以用 `pull-models` 拉回本机开发库：
 
+第一次用之前，把后台账号密码写进本机凭据文件（已被 `.gitignore` 忽略，不会提交）：
+
 ```bash
-NAS_ADMIN_PASSWORD=你的后台密码 ./nas-deploy.sh pull-models --dry-run   # 先预览
-NAS_ADMIN_PASSWORD=你的后台密码 ./nas-deploy.sh pull-models             # 真正写库
+cat > .local/nas-admin.env <<'EOF'
+NAS_ADMIN_USER=xupc
+NAS_ADMIN_PASSWORD=你的后台密码
+EOF
+chmod 600 .local/nas-admin.env
 ```
+
+之后直接跑，不用再在命令行传密码：
+
+```bash
+./nas-deploy.sh pull-models --dry-run   # 先预览
+./nas-deploy.sh pull-models             # 真正写库
+```
+
+环境变量 `NAS_ADMIN_USER` / `NAS_ADMIN_PASSWORD` 优先级高于文件，可临时覆盖；
+换文件用 `NAS_ADMIN_ENV_FILE=…`。
 
 | 参数 | 作用 |
 | --- | --- |

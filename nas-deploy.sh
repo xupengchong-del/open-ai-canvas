@@ -11,6 +11,7 @@
 #   ./nas-deploy.sh shell           登录 NAS shell
 #
 # 环境变量：FORCE_BUILD=1 强制重建镜像；BRANCH=… 换分支；PUBLIC_PORT=… 换对外端口。
+# pull-models 的后台账号密码写在 .local/nas-admin.env（本机、已被 git 忽略），无需每次在命令行传。
 # 连接信息来自 NAS_INFO_FILE（默认 ~/myProg/Nas726.xpc），支持两种写法：
 #   NAS_HOST=… / NAS_USER=… / NAS_PASSWORD=… / NAS_SSH_PORT=…
 #   IP=… / UserName=… / PWD=…
@@ -35,8 +36,8 @@ BRANCH="${BRANCH:-local/daily}"
 PUBLIC_PORT="${PUBLIC_PORT:-3050}"
 INTERNAL_PORT="${INTERNAL_PORT:-3051}"
 FORCE_BUILD="${FORCE_BUILD:-0}"
-# pull-models 需要登录 NAS 后台；默认用开发库里的 admin 账号，可用环境变量覆盖。
-NAS_ADMIN_USER="${NAS_ADMIN_USER:-xupc}"
+# pull-models 的后台账号密码：优先环境变量，否则读 .local/nas-admin.env（本机、已被 git 忽略）。
+NAS_ADMIN_USER="${NAS_ADMIN_USER:-}"
 NAS_ADMIN_PASSWORD="${NAS_ADMIN_PASSWORD:-}"
 
 bold() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
@@ -397,6 +398,19 @@ SCRIPT
   info "用开发机上原来的账号密码登录 https://$NAS_HOST:$PUBLIC_PORT"
 }
 
+# pull-models 需要登录 NAS 后台。密码以 bcrypt 存库不可反解，所以从本机文件读一次；
+# 优先级：环境变量 > $NAS_ADMIN_ENV_FILE（默认 .local/nas-admin.env，已被 .gitignore 忽略）。
+load_admin_credentials() {
+  local env_file="${NAS_ADMIN_ENV_FILE:-$REPO_ROOT/.local/nas-admin.env}"
+  if [ -f "$env_file" ]; then
+    # 只取 NAS_ADMIN_USER / NAS_ADMIN_PASSWORD 两个键，不让文件里其它内容进入环境。
+    NAS_ADMIN_USER="${NAS_ADMIN_USER:-$(grep -E '^[[:space:]]*NAS_ADMIN_USER[[:space:]]*=' "$env_file" | head -1 | cut -d= -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')}"
+    NAS_ADMIN_PASSWORD="${NAS_ADMIN_PASSWORD:-$(grep -E '^[[:space:]]*NAS_ADMIN_PASSWORD[[:space:]]*=' "$env_file" | head -1 | cut -d= -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')}"
+  fi
+  [ -n "$NAS_ADMIN_PASSWORD" ] || die "缺少 NAS 后台密码：在 $env_file 里写 NAS_ADMIN_PASSWORD=…，或运行时带 NAS_ADMIN_PASSWORD=…"
+  [ -n "$NAS_ADMIN_USER" ] || die "缺少 NAS 后台账号：在 $env_file 里写 NAS_ADMIN_USER=…"
+}
+
 # ---------- 从 NAS 拉取模型配置 ----------
 
 cmd_pull_models() {
@@ -412,12 +426,7 @@ cmd_pull_models() {
   db="$REPO_ROOT/.local/project-workbench-debug/open_ai_canvas.db"
   [ -f "$db" ] || die "找不到本机开发数据库：$db"
 
-  [ -n "$NAS_ADMIN_PASSWORD" ] || die "缺少 NAS 后台密码：运行时带上 NAS_ADMIN_PASSWORD=你的密码 ./nas-deploy.sh pull-models"
-
-  if [ -z "$NAS_ADMIN_USER" ]; then
-    NAS_ADMIN_USER="$(sqlite3 "$db" "SELECT username FROM users WHERE role='admin' AND status='active' ORDER BY created_at LIMIT 1")"
-    [ -n "$NAS_ADMIN_USER" ] || die "开发库里没有启用的管理员账号"
-  fi
+  load_admin_credentials
 
   bold "从 NAS 拉取模型配置"
   info "来源: https://$NAS_HOST:$PUBLIC_PORT"
@@ -432,7 +441,10 @@ cmd_pull_models() {
       --scope "$scope" ${channel:+--channel "$channel"} > "$input_file" 2>&1)"; then
     rm -f "$input_file"
     printf '%s\n' "$fetch_err" | sed 's/^/    /'
-    die "抓取 NAS 模型失败（可用 NAS_ADMIN_USER / NAS_ADMIN_PASSWORD 覆盖登录账号）"
+    if printf '%s' "$fetch_err" | grep -q 'rate_limited'; then
+      die "NAS 登录被限流（同一账号短时间登录太多次），等一两分钟再跑一次即可"
+    fi
+    die "抓取 NAS 模型失败：检查 .local/nas-admin.env 里的账号密码，或 NAS_ADMIN_USER / NAS_ADMIN_PASSWORD 覆盖"
   fi
 
   local count
