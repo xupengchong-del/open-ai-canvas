@@ -94,6 +94,29 @@ FORCE_BUILD=1 ./nas-deploy.sh # 强制重建镜像
 | 健康检查 502 | web 容器未就绪或 TLS 容器证书路径错误，`./nas-deploy.sh logs tls` |
 | 登录后模型为空 | 未执行 `sync-api`，或同步时数据库表尚未建好（先跑一次 deploy） |
 
+## 502 Bad Gateway 的成因
+
+`tls` 容器里的 nginx 原本把 `proxy_pass http://web:3000` 的域名**在启动时解析一次**并缓存。
+NAS 重启或 `web` 容器重建后，`web` 会拿到新 IP，而 nginx 仍然打旧地址，于是所有请求都是 502，
+静态首页也同样 502（因为前端和 API 都经 `web` 转发）。
+
+现在配置里固定了 Docker 内置 DNS 并让 nginx 按 TTL 重解析：
+
+```nginx
+resolver 127.0.0.11 valid=10s ipv6=off;
+location / {
+    set $web_upstream http://web:3000;
+    proxy_pass $web_upstream;   # 变量形式才会走运行时解析
+}
+```
+
+`./nas-deploy.sh` 的健康检查也补了自愈：探测到 502/504 时自动 `nginx -s reload` 再重试，
+不再需要人工介入。若线上仍遇到历史遗留的 502，手动执行一次即可：
+
+```bash
+docker exec open-ai-canvas-tls-1 nginx -s reload
+```
+
 ## 部署后的核对
 
 ```bash

@@ -178,6 +178,10 @@ map \$http_upgrade \$connection_upgrade {
     ''      close;
 }
 
+# 容器重建会换 IP；固定走 Docker 内置 DNS 并让 nginx 自己按 TTL 重解析，
+# 否则 nginx 只在启动时解析一次 web，web 换 IP 后会一直 502 到下次 reload。
+resolver 127.0.0.11 valid=10s ipv6=off;
+
 server {
     listen 3050 ssl;
     http2 on;
@@ -197,7 +201,9 @@ server {
     add_header Referrer-Policy "no-referrer" always;
 
     location / {
-        proxy_pass http://web:3000;
+        # 用变量形式触发运行时解析（写死域名时 nginx 只在启动时解析一次）
+        set \$web_upstream http://web:3000;
+        proxy_pass \$web_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host              \$host;
         proxy_set_header X-Real-IP         \$remote_addr;
@@ -325,6 +331,16 @@ SCRIPT
   local attempt code
   for attempt in $(seq 1 15); do
     code="$(curl -sk -o /dev/null -m 8 -w '%{http_code}' "https://$NAS_HOST:$PUBLIC_PORT/api/health" || true)"
+    if [ "$code" = "502" ] || [ "$code" = "504" ]; then
+      # 前端容器换过 IP 时 tls 里的 nginx 会一直打到旧地址，reload 一次即可恢复。
+      warn "tls 反代返回 $code，重载 nginx 后再检查"
+      remote <<'RELOAD' >/dev/null 2>&1 || true
+$(prelude)
+compose exec -T tls nginx -s reload 2>/dev/null || compose restart tls >/dev/null 2>&1 || true
+RELOAD
+      sleep 5
+      continue
+    fi
     [ "$code" = "200" ] && { info "https://$NAS_HOST:$PUBLIC_PORT/api/health → 200 ✓"; break; }
     [ "$attempt" = "15" ] && { warn "健康检查未通过（状态码 ${code:-无响应}）"; warn "排查：./nas-deploy.sh logs tls  或  ./nas-deploy.sh logs web"; }
     sleep 3
