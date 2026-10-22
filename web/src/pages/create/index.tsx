@@ -1166,7 +1166,6 @@ export default function CreatePage() {
 
 
 
-    const generationActive = activeConversation.messages.some((message) => message.role === "assistant" && message.status === "pending");
     const startPrompt = (nextMode: CreationMode, nextPrompt: string) => {
         setAgentMode(false);
         selectMode(nextMode);
@@ -1180,7 +1179,6 @@ export default function CreatePage() {
         prompt,
         setPrompt,
         busy,
-        generationActive,
         referenceReplacementBusy,
         attachments,
         referenceImageSize,

@@ -55,6 +55,16 @@ test("任务建成即放闸，上一条还在生成时仍可提交下一条", ()
     expect(bindTask).toContain("setBusy(false)");
 });
 
+test("上一条任务等待结果时，输入框和有效的再次生成操作不受阻", () => {
+    const source = compactSource(moduleGroupSource("pages/create/creation-workspace.tsx"));
+
+    // 提交忙碌态在任务创建后结束；待生成消息本身不能锁住输入框或按钮。
+    expect(source).toContain("const interactionBusy = props.busy || props.referenceReplacementBusy;");
+    expect(source).toContain("spellCheck disabled={interactionBusy}");
+    expect(source).toContain("disabled={interactionBusy || !canSubmit}");
+    expect(source).not.toContain("props.generationActive");
+});
+
 test("页面水合阶段通过 autoRecoverCreationMessages 全自动静默恢复成功产物", () => {
     const source = compactSource(moduleGroupSource("pages/create/index.tsx"));
     const conversationsSource = compactSource(moduleGroupSource("pages/create/creation-conversations.ts"));

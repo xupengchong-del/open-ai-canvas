@@ -87,7 +87,6 @@ type ComposerProps = {
     prompt: string;
     setPrompt: (value: string) => void;
     busy: boolean;
-    generationActive: boolean;
     referenceReplacementBusy: boolean;
     attachments: CreationAttachment[];
     referenceImageSize?: { width: number; height: number };
@@ -182,13 +181,12 @@ export function CreationComposer(props: ComposerProps) {
     const generationCredits = routeQuote ? routeQuote.amountMicrocredits / 1_000_000 : credits;
     const showCost = creditsEnabled && generationCredits !== null && generationCredits !== undefined;
     const formattedCredits = generationCredits?.toLocaleString("zh-CN", { maximumFractionDigits: 6 });
-    const actionLabel = props.referenceReplacementBusy ? "正在替换参考图" : interactionBusy || (props.generationActive && !canSubmit) ? "生成中" : showCost ? `${routeQuote?.estimated ? "预估" : "消耗"} ${formattedCredits} 积分，发送` : "发送";
-    // Send-button working state must span the WHOLE generation (not just the
-    // submit-lock window): spinner + glow stay while a message is pending and
-    // the composer is empty; typing a next prompt returns the arrow so the
-    // user knows a new send is possible.
-    const showWorkingSpinner = interactionBusy || (props.generationActive && !canSubmit);
-    const showWorkingGlow = props.generationActive && !canSubmit;
+    const actionLabel = props.referenceReplacementBusy ? "正在替换参考图" : interactionBusy ? "生成中" : showCost ? `${routeQuote?.estimated ? "预估" : "消耗"} ${formattedCredits} 积分，发送` : "发送";
+    // 按钮的忙碌态只跟随提交锁，不跟随"上一条还在生成"：任务一旦建出来就放闸，
+    // 用户可以立刻发下一条。之前把 generationActive 也算进忙碌态，导致输入框
+    // 为空（刚发完）时按钮永远转圈，看起来像被锁住。
+    const showWorkingSpinner = interactionBusy;
+    const showWorkingGlow = interactionBusy;
     const placeholder = props.mode === "text"
         ? "描述你的故事、角色或想继续讨论的创意"
         : props.mode === "image"
