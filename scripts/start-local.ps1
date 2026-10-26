@@ -45,7 +45,7 @@ function Test-ListeningPort([int]$Port) {
     }
 }
 
-foreach ($port in @(3000, 8080)) {
+foreach ($port in @(4010, 8080)) {
     if (Test-ListeningPort $port) {
         throw "端口 $port 已被占用，请先关闭占用进程后重试。"
     }
@@ -82,7 +82,7 @@ $webCommand = @"
 `$ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $webDirLiteral
 `$env:VITE_API_PROXY_TARGET = 'http://127.0.0.1:8080'
-Write-Host '影策前端：http://localhost:3000' -ForegroundColor Cyan
+Write-Host '影策前端：http://localhost:4010' -ForegroundColor Cyan
 bun run dev
 "@
 
@@ -91,4 +91,4 @@ $webProcess = Start-Process -FilePath $powerShellPath -WindowStyle Normal -Worki
 
 Write-Host "已打开前后端开发窗口。" -ForegroundColor Green
 Write-Host "后端窗口 PID: $($backendProcess.Id)；前端窗口 PID: $($webProcess.Id)"
-Write-Host "访问 http://localhost:3000；分别在两个窗口按 Ctrl+C 停止服务。"
+Write-Host "访问 http://localhost:4010；分别在两个窗口按 Ctrl+C 停止服务。"

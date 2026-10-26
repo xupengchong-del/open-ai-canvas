@@ -1,5 +1,5 @@
 ﻿# 影策画布一键启动器
-# 启动后端(8080) + 前端(3000) + cloudflared 隧道(公网 canvas.yingce.cc.cd)，打开浏览器
+# 启动后端(8080) + 前端(4010) + cloudflared 隧道(公网 canvas.yingce.cc.cd)，打开浏览器
 
 [CmdletBinding()]
 param()
@@ -15,8 +15,8 @@ $goModuleCache = Join-Path $repoRoot ".local\cache\go-mod"
 $cloudflaredExe = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
 $bunExe = "C:\Users\Administrator\AppData\Roaming\npm\node_modules\bun\bin\bun.exe"
 if (-not (Test-Path -LiteralPath $bunExe)) { $bunExe = "bun" }
-$localUrl = "http://localhost:3000"
-$healthUrl = "http://127.0.0.1:3000/api/health"
+$localUrl = "http://localhost:4010"
+$healthUrl = "http://127.0.0.1:4010/api/health"
 
 function Test-PortListen([int]$Port) {
     try {
@@ -36,7 +36,7 @@ function Test-Http([string]$Url) {
 }
 
 # 0) 已全部就绪则直接打开
-if ((Test-PortListen 8080) -and (Test-PortListen 3000)) {
+if ((Test-PortListen 8080) -and (Test-PortListen 4010)) {
     Write-Host "影策画布已在运行，正在打开..." -ForegroundColor Green
     Start-Process $localUrl
     exit 0
@@ -59,9 +59,9 @@ if (-not (Test-PortListen 8080)) {
         -WindowStyle Hidden | Out-Null
 }
 
-# 2) 前端：3000
-if (-not (Test-PortListen 3000)) {
-    Write-Host "启动前端 (3000)..." -ForegroundColor Cyan
+# 2) 前端：4010
+if (-not (Test-PortListen 4010)) {
+    Write-Host "启动前端 (4010)..." -ForegroundColor Cyan
     $viteBinary = Join-Path $webDir "node_modules\.bin\vite"
     if (-not (Test-Path -LiteralPath $viteBinary)) {
         Write-Host "安装前端依赖..." -ForegroundColor Yellow
@@ -96,7 +96,7 @@ do {
         Write-Host "影策画布已启动，正在打开浏览器..." -ForegroundColor Green
         Start-Sleep -Seconds 1
         Start-Process $localUrl
-        Write-Host "本地: http://localhost:3000" -ForegroundColor Green
+        Write-Host "本地: http://localhost:4010" -ForegroundColor Green
         Write-Host "公网: https://canvas.yingce.cc.cd" -ForegroundColor Green
         exit 0
     }

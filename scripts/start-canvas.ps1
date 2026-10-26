@@ -5,8 +5,8 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $localStarter = Join-Path $PSScriptRoot "start-local.ps1"
-$healthUrl = "http://127.0.0.1:3000/api/health"
-$canvasUrl = "http://localhost:3000/canvas"
+$healthUrl = "http://127.0.0.1:4010/api/health"
+$canvasUrl = "http://localhost:4010/canvas"
 
 function Test-CanvasHttp([string]$Url) {
     try {
@@ -31,7 +31,7 @@ if (Test-CanvasHttp $healthUrl) {
     exit 0
 }
 
-$occupiedPorts = @(3000, 8080) | Where-Object { Test-ListeningPort $_ }
+$occupiedPorts = @(4010, 8080) | Where-Object { Test-ListeningPort $_ }
 if ($occupiedPorts.Count -gt 0) {
     throw "端口 $($occupiedPorts -join ', ') 已被其他程序占用，无法安全启动影策。"
 }

@@ -41,9 +41,9 @@ docker compose -f docker-compose.deploy.yml logs --since=15m -f backend
 - 打开两个 PowerShell 窗口，分别运行后端和前端；
 - 将前端 `/api` 请求代理到 `http://127.0.0.1:8080`。
 
-启动后访问 [http://localhost:3000](http://localhost:3000)。后端健康检查地址是 [http://127.0.0.1:8080/api/health](http://127.0.0.1:8080/api/health)。
+启动后访问 [http://localhost:4010](http://localhost:4010)。后端健康检查地址是 [http://127.0.0.1:8080/api/health](http://127.0.0.1:8080/api/health)。
 
-脚本使用固定的本地开发端口：前端 `3000`，后端 `8080`。如果端口被占用，脚本会先退出，不会关闭已有进程。请分别在两个开发窗口中按 `Ctrl+C` 停止服务。
+脚本使用固定的本地开发端口：前端 `4010`，后端 `8080`。如果端口被占用，脚本会先退出，不会关闭已有进程。请分别在两个开发窗口中按 `Ctrl+C` 停止服务。
 
 如果 PowerShell 的执行策略阻止脚本运行，可以只对当前进程临时放行：
 
@@ -76,7 +76,7 @@ bun run dev
 
 `web/` 只使用 `bun.lock`。不要用 pnpm 或 npm 往同一套 `node_modules` 里再装一遍。
 
-前端默认监听 `0.0.0.0:3000`，Vite 将 `/api` 和 OAuth 回调代理到 `127.0.0.1:8080`。如需修改代理目标，可设置 `VITE_API_PROXY_TARGET`。
+前端默认监听 `0.0.0.0:4010`，Vite 将 `/api` 和 OAuth 回调代理到 `127.0.0.1:8080`。如需修改端口，使用 `bun run dev -- --port <端口>`；如需修改代理目标，可设置 `VITE_API_PROXY_TARGET`。
 
 ## 时间线字幕转写（whisper.cpp）
 
