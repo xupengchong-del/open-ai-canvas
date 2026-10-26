@@ -88,7 +88,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	}
 	durationMs := planDurationMs(plan)
 	fileName := fmt.Sprintf("timeline-render-%s.mp4", time.Now().Format("20060102-150405"))
-	renderForceLocal := s.isVideoStorageTargetLocal(task.UserID)
+	renderForceLocal := s.isGeneratedVisualStorageTargetLocal()
 	resource, _, err := s.storeResource(task.UserID, "media", fileName, "video/mp4", stat.Size(), renderWidth, renderHeight, durationMs, file, nil, renderForceLocal)
 	if err != nil || resource == nil {
 		return w.failTimelineTask(task, "渲染失败", "保存渲染产物失败")

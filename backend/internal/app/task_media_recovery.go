@@ -182,6 +182,7 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 	if _, err := s.mediaTaskProject(task); err != nil {
 		return nil, &mediaRecoveryError{stage: "register", cause: err}
 	}
+	forceLocal := isGeneratedVisualKind(checkpoint.Mode) && s.isGeneratedVisualStorageTargetLocal()
 	items := make([]interface{}, 0, len(checkpoint.Items))
 	for index := range checkpoint.Items {
 		item := &checkpoint.Items[index]
@@ -216,18 +217,20 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 				}
 			}
 			stage := "local_save"
-			_, _, oss, settingErr := s.activeResourceOSSSetting(task.UserID)
-			if settingErr != nil {
-				return nil, &mediaRecoveryError{stage: "upload", cause: settingErr}
-			}
-			if oss || (resource != nil && resource.Provider != "local") {
-				stage = "upload"
+			if !forceLocal {
+				_, _, oss, settingErr := s.activeResourceOSSSetting(task.UserID)
+				if settingErr != nil {
+					return nil, &mediaRecoveryError{stage: "upload", cause: settingErr}
+				}
+				if oss || (resource != nil && resource.Provider != "local") {
+					stage = "upload"
+				}
 			}
 			if err := s.saveMediaCheckpoint(task, checkpoint, stage); err != nil {
 				return nil, err
 			}
 			started := time.Now()
-			resource, err = s.storeTaskMediaFile(task, index, path, item.MIMEType, checkpoint.Mode, resource)
+			resource, err = s.storeTaskMediaFile(task, index, path, item.MIMEType, checkpoint.Mode, resource, forceLocal)
 			s.logMediaStage(*task, stage, started, err)
 			if err != nil {
 				return nil, &mediaRecoveryError{stage: stage, retryable: retryableMediaRecovery(err), cause: err}

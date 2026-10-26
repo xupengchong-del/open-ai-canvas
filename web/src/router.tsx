@@ -25,6 +25,7 @@ const AdminPluginsPage = lazy(() => import("@/pages/admin/plugins/plugins-page")
 const SkillCurationPage = lazy(() => import("@/pages/admin/skill-curation-page"));
 const AdminPaymentsPage = lazy(() => import("@/pages/admin/payments/payments-page"));
 const LogsPage = lazy(() => import("@/pages/admin/logs/logs-page"));
+const TaskMonitorPage = lazy(() => import("@/pages/admin/tasks/tasks-page"));
 const LoginLogsPage = lazy(() => import("@/pages/admin/login-logs/login-logs-page"));
 const RedemptionCodesPage = lazy(() => import("@/pages/admin/redemption-codes/redemption-codes-page"));
 const RuntimePolicySettingsPage = lazy(() => import("@/pages/admin/settings/runtime-policy-settings-page"));
@@ -245,6 +246,7 @@ export const router = createBrowserRouter([
                     { path: "credit-operations", element: <CreditOperationsPage /> },
                     { path: "redemption-codes", element: <RedemptionCodesPage /> },
                     { path: "logs", element: <LogsPage /> },
+                    { path: "tasks", element: <TaskMonitorPage /> },
                     { path: "settings", element: <Navigate to="runtime-policy" replace /> },
                     { path: "settings/appearance", element: <AppearanceSettingsPage /> },
                     { path: "settings/drawing-engine", element: <DrawingEngineSettingsPage /> },

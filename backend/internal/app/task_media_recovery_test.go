@@ -21,6 +21,7 @@ import (
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/protocol"
 	"yingce/backend/internal/repository"
+	"yingce/backend/internal/storage"
 )
 
 func newMediaRecoveryTestService(t *testing.T) (*Service, *gorm.DB) {
@@ -143,6 +144,7 @@ func TestMediaRecoveryDownloadFailureResumesSameTaskAfterRestart(t *testing.T) {
 func TestMediaRecoveryUploadFailureReusesStagedFileAndResource(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
 	s, db := newMediaRecoveryTestService(t)
+	seedSystemOSSStorageTarget(t, s, storage.VideoStorageTargetOSS)
 	seedOSSEnabled(t, db, "media-user", "http://127.0.0.1:1")
 	task := seedMediaTask(t, db, providerConfig{})
 	temp, err := s.stageInlineMedia(mediaTestPNG(t))

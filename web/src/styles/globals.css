@@ -4111,6 +4111,8 @@ html:not(.dark) .creation-studio-control[aria-expanded="true"] { background: #e7
     .creation-chat-control > svg { width: 15px; height: 15px; flex: 0 0 auto; }
     .creation-chat-control > svg:last-child { width: 14px; height: 14px; color: var(--creation-muted); transition: transform 160ms var(--motion-ease-out); }
     .creation-chat-control > svg:last-child.is-open { transform: rotate(180deg); }
+    /* 新建创作按钮只有一个图标，不套用上面“末尾图标=下拉箭头”的缩小变灰规则。 */
+    .creation-chat-control.is-new-conversation > svg:last-child { width: 15px; height: 15px; color: inherit; }
 
     html:not(.dark) .creation-chat-control { border-color: transparent; background: #f1f3f5; color: #262b32; }
     html:not(.dark) .creation-chat-control:hover { border-color: rgba(20, 26, 35, .2); background: #e9edf1; }

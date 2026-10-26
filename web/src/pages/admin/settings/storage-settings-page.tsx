@@ -454,11 +454,11 @@ export default function StorageSettingsPage() {
                                     </div>
 
                                     <div className="admin-storage-form-section">
-                                        <FormSectionTitle icon={<Film className="size-4" />} title="生成视频存储策略" description="决定生成的视频文件保存在服务器本地还是上传至对象存储（OSS）。" />
+                                        <FormSectionTitle icon={<Film className="size-4" />} title="生成结果存储策略" description="决定生成的视频和图片保存在服务器本地还是上传至对象存储（OSS）。" />
                                         <Form.Item
                                             name="videoStorageTarget"
-                                            label="生成视频保存位置"
-                                            extra="视频文件体积普遍较大（每条 10MB~100MB+），保存在服务器本地可完全免除 OSS 存储费与昂贵的下行流量费。"
+                                            label="生成的视频与图片保存位置"
+                                            extra="视频和图片文件体积较大，保存在服务器本地可完全免除 OSS 存储费与昂贵的下行流量费；生成的音频不受此选项影响。"
                                         >
                                             <Radio.Group className="flex flex-col gap-2">
                                                 <Radio value="local">保存在服务器（默认推荐，节省 OSS 流量与存储费）</Radio>

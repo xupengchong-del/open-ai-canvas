@@ -28,6 +28,7 @@ import {
     RadioTower,
     RefreshCw,
     Rows3,
+    ListChecks,
     Sparkles,
     Settings2,
     ShieldAlert,
@@ -69,6 +70,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
         items: [
             { path: "/admin", label: "运行总览", description: "请求质量、队列与成本趋势", icon: <BarChart3 className="size-4" /> },
             { path: "/admin/logs", label: "请求明细", description: "上游调用与费用", icon: <FileClock className="size-4" /> },
+            { path: "/admin/tasks", label: "任务看板", description: "跨用户任务状态与汇总", icon: <ListChecks className="size-4" /> },
             { path: "/admin/settings/system-performance", label: "系统性能", description: "主机、数据库与缓存状态", icon: <Activity className="size-4" /> },
         ],
     },

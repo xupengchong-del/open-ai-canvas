@@ -208,7 +208,7 @@ func mediaUploadKey(taskID string, index int) *string {
 	return &key
 }
 
-func (s *Service) storeTaskMediaFile(task *model.Task, index int, path, mimeType, kind string, existing *model.Resource) (*model.Resource, error) {
+func (s *Service) storeTaskMediaFile(task *model.Task, index int, path, mimeType, kind string, existing *model.Resource, forceLocal bool) (*model.Resource, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -266,12 +266,16 @@ func (s *Service) storeTaskMediaFile(task *model.Task, index int, path, mimeType
 	}()
 	var resource *model.Resource
 	if existing == nil {
-		resource, _, err = s.storeResourceWithWriter(task.UserID, kind, "generated."+extensionFromMimeType(mimeType), mimeType, info.Size(), width, height, durationMs, file, mediaUploadKey(task.ID, index), false, s.storeTaskMediaObject)
+		resource, _, err = s.storeResourceWithWriter(task.UserID, kind, "generated."+extensionFromMimeType(mimeType), mimeType, info.Size(), width, height, durationMs, file, mediaUploadKey(task.ID, index), forceLocal, s.storeTaskMediaObject)
 	} else {
 		// Reuse the same object key after a failed upload; no orphan per retry.
 		resource = existing
 		if resource.UserID != task.UserID || resource.Size != info.Size() || resource.MimeType != mimeType {
 			return nil, errors.New("恢复文件与原始资源不一致")
+		}
+		// A failed object-storage attempt must follow the current local policy on retry.
+		if forceLocal && resource.Provider != "local" {
+			resource.Provider, resource.Endpoint, resource.Bucket, resource.StorageSettingID = "local", "", "", ""
 		}
 		resource.DurationMs = durationMs
 		resource.ETag, err = s.storeTaskMediaObject(resource, "generated."+extensionFromMimeType(mimeType), file)

@@ -72,7 +72,7 @@ export function CreationWorkspaceToolbar({ shots, onJumpToShot, onNewConversatio
         </div>
         <div className="creation-toolbar-actions">
             <Button size="small" loading={openingCanvas} onClick={onContinueCanvas}>画布中继续</Button>
-            <Tooltip title="新建创作"><button type="button" aria-label="新建创作" className="creation-toolbar-action" onClick={onNewConversation}><Plus /></button></Tooltip>
+            <Tooltip title="新建创作"><button type="button" aria-label="新建创作" className="creation-toolbar-action" onClick={onNewConversation}><Plus /><span>新建</span></button></Tooltip>
             <Tooltip title="历史对话"><button type="button" aria-label="查看历史对话" className="creation-toolbar-action" onClick={onOpenHistory}><History /></button></Tooltip>
         </div>
     </header>;
@@ -95,6 +95,7 @@ type ComposerProps = {
     onRemoveAttachment: (id: string) => void;
     onClearAttachments: () => void;
     onClearComposer: () => void;
+    onNewConversation: () => void;
     onReorderAttachments: (attachments: CreationAttachment[]) => void;
     onReplaceAttachment: (targetAttachmentId: string, replacement: CreationAttachment) => void;
     onReplaceReferenceFiles: (targetAttachmentId: string, files: File[]) => void;
@@ -399,6 +400,8 @@ export function CreationComposer(props: ComposerProps) {
                     <Tooltip title={interactionBusy ? "生成中，此开关将在下次发送时生效" : (props.textThinking ? "思考已开启，会展示模型返回的推理摘要" : "开启模型思考")}><button type="button" className="creation-chat-control" aria-pressed={props.textThinking} disabled={interactionBusy} onClick={() => props.setTextThinking(!props.textThinking)}><Brain /><span>思考</span></button></Tooltip>
                 </> : null}
                 {props.prompt.trim() || props.attachments.length || props.references.some((reference) => reference.active) ? <Tooltip title="清空提示词和参考内容"><button type="button" className="creation-chat-control is-clear" onClick={props.onClearComposer} disabled={interactionBusy} aria-label="清空提示词和参考内容"><Trash2 /><span>清空</span></button></Tooltip> : null}
+                {/* 对话视图下回到首页（含 Agent 模式）的唯一常驻入口：顶栏的新建按钮是纯图标且容易被忽略。 */}
+                {props.variant === "thread" ? <Tooltip title="新建创作，回到开始创作页"><button type="button" className="creation-chat-control is-new-conversation" onClick={props.onNewConversation} aria-label="新建创作"><Plus /><span>新建</span></button></Tooltip> : null}
             </div>
             <Button
                 type="text"

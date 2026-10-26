@@ -1187,6 +1187,7 @@ export default function CreatePage() {
         onRemoveAttachment: removeAttachment,
         onClearAttachments: clearAttachments,
         onClearComposer: clearComposer,
+        onNewConversation: startNewConversation,
         onReorderAttachments: reorderAttachments,
         onReplaceAttachment: replaceReferenceFromTrack,
         onReplaceReferenceFiles: replaceReferenceFromFiles,

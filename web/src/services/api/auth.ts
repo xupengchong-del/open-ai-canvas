@@ -502,6 +502,77 @@ export function listAdminUserLedger(id: string, params: { page?: number; pageSiz
     return http.get<{ entries: CreditLedgerEntry[]; total: number; page: number; pageSize: number }>(`/admin/users/${encodeURIComponent(id)}/ledger`, { params });
 }
 
+export type AdminTaskMonitorStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export type AdminTaskMonitorRow = {
+    id: string;
+    userId: string;
+    username: string;
+    displayName: string;
+    type: string;
+    status: AdminTaskMonitorStatus;
+    stage: string;
+    progress: number;
+    operation?: string;
+    provider?: string;
+    model?: string;
+    providerRequestId?: string;
+    attempts: number;
+    error?: string;
+    prompt?: string;
+    hasMedia: boolean;
+    mediaKind?: "image" | "video";
+    startedAt?: string;
+    completedAt?: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminTaskMonitorCounts = {
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    total: number;
+};
+
+export type AdminTaskMonitorPage = {
+    tasks: AdminTaskMonitorRow[];
+    total: number;
+    page: number;
+    pageSize: number;
+    counts: AdminTaskMonitorCounts;
+};
+
+export type AdminTaskMonitorParams = AnalyticsFilters & {
+    status?: string;
+    keyword?: string;
+    page?: number;
+    pageSize?: number;
+};
+
+export type AdminTaskUserStat = {
+    userId: string;
+    username: string;
+    displayName: string;
+    succeeded: number;
+    failed: number;
+    total: number;
+};
+
+export function listAdminTasks(params: AdminTaskMonitorParams = {}) {
+    return http.get<AdminTaskMonitorPage>("/admin/tasks", { params });
+}
+
+export function listAdminTaskUserStats(params: AnalyticsFilters = {}) {
+    return http.get<{ users: AdminTaskUserStat[] }>("/admin/task-metrics/users", { params });
+}
+
+export function getAdminTask(id: string) {
+    return http.get<{ task: AdminTaskMonitorRow }>(`/admin/tasks/${encodeURIComponent(id)}`);
+}
+
 export function listAdminUserTasks(id: string, params: { page?: number; pageSize?: number } = {}) {
     return http.get<{ tasks: AdminUserTask[]; total: number; page: number; pageSize: number }>(`/admin/users/${encodeURIComponent(id)}/tasks`, { params });
 }
@@ -643,6 +714,10 @@ export function batchRecoverAdminApiLogs(ids: string[]) {
 export async function exportAdminApiLogs(params: AdminApiLogParams & { ids?: string[] } = {}) {
     const response = await http.raw<Blob>({ method: "get", url: "/admin/api-logs-export.csv", params: { ...params, ids: params.ids?.join(",") }, responseType: "blob" });
     return response.data;
+}
+
+export function listAdminAnalyticsUsers(params: AnalyticsFilters = {}) {
+    return http.get<{ users: AdminAnalytics["users"]; dau: number; wau: number; mau: number }>("/admin/analytics/users", { params });
 }
 
 export function getAdminAnalytics(params: AnalyticsFilters) {

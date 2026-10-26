@@ -5,6 +5,16 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 生成图片与视频的本地存储策略
+
+- 已实现：后台「存储服务 → 生成结果存储策略」在 `local` 时同时覆盖生成的视频和图片，`oss` 时两者仍上传对象存储；生成的音频不受该选项影响。上传的参考素材继续按全局存储位置处理。
+- 已实现：声明式协议（NewAPI、Veo 等）与旧手写视频路径都读取同一策略；恢复重试时若策略已改为本地，会复用原资源记录改为本地写入，不再回退 OSS。时间线渲染继续按该策略落本地。
+- 实现位置：`backend/internal/app/resource_store.go`、`resource_generated.go`、`task_media_storage.go`、`task_media_recovery.go`、`task_render.go`，后台文案 `web/src/pages/admin/settings/storage-settings-page.tsx`。
+- 已验证：新增 `TestPersistGeneratedImageHonorsLocalStorageTarget`、`TestMaterializeGeneratedMediaHonorsLocalStorageTarget`；`go test ./internal/app/` 中存储、媒体恢复、资源相关用例通过；`go build ./...`、`bun run typecheck`、`bun run build` 通过。
+- [ ] 用户验收：开启 OSS 且策略选「保存在服务器」时，分别生成图片和视频，确认资源列表存储位置为「服务器」、OSS 桶没有新增对象，画布和素材库正常显示。
+- [ ] 用户验收：策略切到「保存在 OSS」后重新生成图片和视频，确认两者都上传 OSS；只生成音频时确认音频仍按原存储路径处理。
+- [ ] 未迁移：已在 OSS 的历史生成图片/视频不会自动搬回服务器，需要在后台「存储资源」逐条点「转至服务器」。
+
 ## 图片尺寸与分辨率配置顺序
 
 - 已修复：尺寸与分辨率开关统一更新能力配置，任意顺序启用时都会初始化缺失档位；新增档位继承已选比例（含自定义比例与已有像素预设的比例），不再固定缩减为常用六项。没有已有比例时仍使用常用比例，并遵守插件支持范围。

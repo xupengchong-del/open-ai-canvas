@@ -30,15 +30,17 @@ func (s *Service) UploadResource(userID string, header *multipart.FileHeader, ki
 	return s.uploadResource(userID, header, kind, width, height, durationMs, false, uploadIdentity...)
 }
 
-// uploadLocalResource keeps small system-owned assets on the server even when
-// the uploader or platform has enabled object storage. The resource still uses
-// the normal database record and persistent data directory lifecycle.
-func (s *Service) isVideoStorageTargetLocal(userID string) bool {
+// 生成的图片和视频在 local 策略下强制落服务器本地；上传资源和生成音频仍按 OSS 开关走。
+func (s *Service) isGeneratedVisualStorageTargetLocal() bool {
 	_, systemSetting, err := s.readOSSSetting()
 	if err != nil {
 		return true
 	}
 	return systemSetting.VideoStorageTarget != storage.VideoStorageTargetOSS
+}
+
+func isGeneratedVisualKind(kind string) bool {
+	return kind == "image" || kind == "video"
 }
 
 func (s *Service) uploadLocalResource(userID string, header *multipart.FileHeader, kind string, width int, height int, durationMs int64, uploadIdentity ...string) (*model.Resource, error) {

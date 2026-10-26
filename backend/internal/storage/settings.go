@@ -18,24 +18,24 @@ const (
 )
 
 type Settings struct {
-	Delivery            DeliverySettings `json:"delivery"`
-	Enabled             bool             `json:"enabled"`
-	Provider            string           `json:"provider"`
-	Region              string           `json:"region"`
-	Endpoint            string           `json:"endpoint"`
-	CDNBaseURL          string           `json:"cdnBaseUrl"`
-	Bucket              string           `json:"bucket"`
-	AccessKeyID         string           `json:"accessKeyId"`
-	AccessKeySecret     string           `json:"accessKeySecret"`
-	PublicBaseURL       string           `json:"publicBaseUrl"`
-	PathPrefix          string           `json:"pathPrefix"`
-	S3Preset            string           `json:"s3Preset"`
-	PathStyle           bool             `json:"pathStyle"`
-	SessionToken        string           `json:"sessionToken"`
-	StorageLocationID   string           `json:"storageLocationId"`
-	AllowUserS3         bool             `json:"allowUserS3"`
-	VideoStorageTarget  string           `json:"videoStorageTarget"` // "local" | "oss", 默认为 "local"
-	Runtime             RuntimePolicy    `json:"-"`
+	Delivery           DeliverySettings `json:"delivery"`
+	Enabled            bool             `json:"enabled"`
+	Provider           string           `json:"provider"`
+	Region             string           `json:"region"`
+	Endpoint           string           `json:"endpoint"`
+	CDNBaseURL         string           `json:"cdnBaseUrl"`
+	Bucket             string           `json:"bucket"`
+	AccessKeyID        string           `json:"accessKeyId"`
+	AccessKeySecret    string           `json:"accessKeySecret"`
+	PublicBaseURL      string           `json:"publicBaseUrl"`
+	PathPrefix         string           `json:"pathPrefix"`
+	S3Preset           string           `json:"s3Preset"`
+	PathStyle          bool             `json:"pathStyle"`
+	SessionToken       string           `json:"sessionToken"`
+	StorageLocationID  string           `json:"storageLocationId"`
+	AllowUserS3        bool             `json:"allowUserS3"`
+	VideoStorageTarget string           `json:"videoStorageTarget"` // 生成的视频与图片存放位置："local" | "oss"，默认为 "local"
+	Runtime            RuntimePolicy    `json:"-"`
 	// 平台切换云厂商后仍需读取历史资源，因此仅归档非当前厂商的访问密钥。
 	ArchivedCredentials map[string]Credentials `json:"archivedCredentials,omitempty"`
 }

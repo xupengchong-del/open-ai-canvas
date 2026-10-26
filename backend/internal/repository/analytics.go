@@ -341,7 +341,7 @@ func (r *Repository) VideoAPICallRoot(log model.ApiCallLog) (*model.ApiCallLog, 
 // midnight until the UTC date rolls forward.
 func whereTimeRange(query *gorm.DB, column string, from, to time.Time) *gorm.DB {
 	switch column {
-	case "created_at", "api_call_logs.created_at":
+	case "created_at", "api_call_logs.created_at", "tasks.created_at":
 	default:
 		return query.Where("1 = 0")
 	}
