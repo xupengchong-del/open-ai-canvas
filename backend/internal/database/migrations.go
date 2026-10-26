@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 55
+const CurrentSchemaVersion int64 = 61
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -32,6 +32,9 @@ const resourceThumbnailChecksum = "sha256:resource-thumbnail-v41-20260927"
 const workbenchToolsMigrationName = "workbench_tools_and_presets"
 const workbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v54-20261014"
 const legacyWorkbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v51-20261014"
+const channelModelUpstreamPriceNoteMigrationName = "channel_model_upstream_price_note"
+const channelModelUpstreamPriceNoteChecksum = "sha256:channel-model-upstream-price-note-v61-20261026"
+const legacyChannelModelUpstreamPriceNoteChecksum = "sha256:channel-model-upstream-price-note-v55-20261012"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -184,12 +187,41 @@ var schemaMigrations = []migration{
 	{version: 54, name: workbenchToolsMigrationName, checksum: workbenchToolsMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.WorkbenchTool{}, &model.WorkbenchPreset{}, &model.Task{})
 	}},
-	{version: 55, name: "channel_model_upstream_price_note", checksum: "sha256:channel-model-upstream-price-note-v55-20261012", apply: func(tx *gorm.DB) error {
-		if !tx.Migrator().HasColumn(&model.ChannelModel{}, "UpstreamPriceNote") {
-			return tx.Migrator().AddColumn(&model.ChannelModel{}, "UpstreamPriceNote")
+	{version: 55, name: "provider_catalog_source", checksum: "sha256:provider-catalog-source-v55", apply: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn(&model.ModelChannel{}, "CatalogProviderID") {
+			if err := tx.Migrator().AddColumn(&model.ModelChannel{}, "CatalogProviderID"); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasColumn(&model.ChannelModel{}, "CatalogModelKey") {
+			return tx.Migrator().AddColumn(&model.ChannelModel{}, "CatalogModelKey")
 		}
 		return nil
 	}},
+	{version: 56, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v56-20261016", apply: migrateSchemaV56},
+	{version: 57, name: "canvas_multi_session_sync", checksum: "sha256:canvas-multi-session-sync-v57", apply: migrateCanvasCollaboration},
+	{version: 58, name: "agent_memory_proposals", checksum: "sha256:agent-memory-proposals-v58", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.AgentLesson{}, &model.AgentMemorySetting{}, &model.AgentMemoryProposal{}, &model.AgentMemoryRevision{})
+	}},
+	{version: 59, name: "channel_model_protocol_length", checksum: "sha256:channel-model-protocol-length-v59", apply: migrateChannelModelProtocolLength},
+	{version: 60, name: "user_feedbacks", checksum: "sha256:user-feedbacks-v60-20261020", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.UserFeedback{})
+	}},
+	{version: 61, name: channelModelUpstreamPriceNoteMigrationName, checksum: channelModelUpstreamPriceNoteChecksum, apply: migrateChannelModelUpstreamPriceNote},
+}
+
+func migrateChannelModelProtocolLength(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		return tx.Exec("ALTER TABLE channel_models ALTER COLUMN protocol TYPE varchar(64)").Error
+	}
+	return tx.Migrator().AlterColumn(&model.ChannelModel{}, "Protocol")
+}
+
+func migrateChannelModelUpstreamPriceNote(tx *gorm.DB) error {
+	if !tx.Migrator().HasColumn(&model.ChannelModel{}, "UpstreamPriceNote") {
+		return tx.Migrator().AddColumn(&model.ChannelModel{}, "UpstreamPriceNote")
+	}
+	return nil
 }
 
 func migratePrefixedIDSequenceReconcile(tx *gorm.DB) error {
@@ -560,6 +592,56 @@ func normalizeLegacyWorkbenchMigration(tx *gorm.DB) error {
 
 const workbenchToolsMigrationVersion int64 = 54
 
+// 本地分支曾把上游价格摘要登记为迁移 55，与官方 55（provider_catalog_source）冲突。
+// 启动时把旧记录搬到 61，再按官方顺序补跑 55；列创建保持幂等。
+func normalizeLegacyUpstreamPriceNoteMigration(tx *gorm.DB) error {
+	var legacy schemaMigration
+	err := tx.First(&legacy, "version = ?", 55).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("读取旧上游价格迁移记录：%w", err)
+	}
+	if legacy.Name != channelModelUpstreamPriceNoteMigrationName || legacy.Checksum != legacyChannelModelUpstreamPriceNoteChecksum {
+		return nil
+	}
+	if !tx.Migrator().HasColumn(&model.ChannelModel{}, "UpstreamPriceNote") {
+		if err := migrateChannelModelUpstreamPriceNote(tx); err != nil {
+			return fmt.Errorf("补齐旧上游价格迁移列：%w", err)
+		}
+	}
+	result := tx.Model(&schemaMigration{}).
+		Where("version = ? AND name = ? AND checksum = ?", legacy.Version, legacy.Name, legacy.Checksum).
+		Updates(map[string]any{
+			"version":  61,
+			"name":     channelModelUpstreamPriceNoteMigrationName,
+			"checksum": channelModelUpstreamPriceNoteChecksum,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("归一化旧上游价格迁移记录：%w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("归一化旧上游价格迁移记录影响 %d 行，拒绝继续启动", result.RowsAffected)
+	}
+	return nil
+}
+
+func migrateSchemaV56(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.ApiCallLog{}, &model.Task{}, &model.CreditLedgerEntry{}); err != nil {
+		return fmt.Errorf("迁移 SQL 性能索引：%w", err)
+	}
+	if tx.Dialector.Name() == "sqlite" {
+		if err := tx.Exec("UPDATE api_call_logs SET created_at_epoch = unixepoch(created_at) WHERE created_at_epoch = 0 OR created_at_epoch IS NULL").Error; err != nil {
+			return fmt.Errorf("回填 api_call_logs 时间戳：%w", err)
+		}
+		if err := tx.Exec("UPDATE tasks SET created_at_epoch = unixepoch(created_at) WHERE created_at_epoch = 0 OR created_at_epoch IS NULL").Error; err != nil {
+			return fmt.Errorf("回填 tasks 时间戳：%w", err)
+		}
+	}
+	return nil
+}
+
 func MigrateSchema(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		if tx.Dialector.Name() == "postgres" {
@@ -571,6 +653,9 @@ func MigrateSchema(db *gorm.DB) error {
 			return fmt.Errorf("初始化数据库迁移记录：%w", err)
 		}
 		if err := normalizeLegacyWorkbenchMigration(tx); err != nil {
+			return err
+		}
+		if err := normalizeLegacyUpstreamPriceNoteMigration(tx); err != nil {
 			return err
 		}
 		plan, err := migrationsForDatabase(tx)

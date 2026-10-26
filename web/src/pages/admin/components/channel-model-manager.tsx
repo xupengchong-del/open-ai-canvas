@@ -260,7 +260,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                     </span>
                 ),
         },
-        { title: "规格成本价 / 销售价 / 利润率", width: 310, render: (_, item) => <ChannelModelCostSummary item={item} /> },
+        { title: "规格成本价 / 销售价 / 加价", width: 310, render: (_, item) => <ChannelModelCostSummary item={item} /> },
         {
             title: "可用性",
             width: 140,
@@ -344,7 +344,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                     <h3 className="admin-channel-model-heading">
                         模型管理 <span className="admin-channel-count">{items.length}</span>
                     </h3>
-                    <p className="admin-channel-model-hint">点击“自定义排序”调整模型展示顺序；规格展示成本价 / 销售价及利润率，勾选模型可统一调价</p>
+                    <p className="admin-channel-model-hint">点击“自定义排序”调整模型展示顺序；规格展示成本价 / 销售价及加价率，勾选模型可统一调价</p>
                 </div>
                 <Space wrap>
                     <ChannelOrderDialog
