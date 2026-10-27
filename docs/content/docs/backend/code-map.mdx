@@ -241,3 +241,5 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 ## 画布外观
 
 `web/src/lib/canvas/canvas-appearance.ts` 管理预设快照、浅深记忆与默认偏好；`web/src/components/canvas/canvas-appearance-controls.tsx` 管理展开与微调；`web/src/components/canvas/canvas-toolbar.tsx` 限制外观和添加节点浮层尺寸。`web/src/stores/canvas/use-canvas-store.ts` 在创建时写入实际外观与线网格默认值，后续沿用画布持久化。
+
+| 批量生成视频 | `backend/internal/app/batch_video.go`（项目、分析/策划调度、审核、验收、提交、队列与重试）、`batch_video_planning.go`（策划提示词与结构化结果解析）、`batch_video_creative.go`（创意内容编辑与程序重新匹配）、`batch_video_storage.go`（用途白名单、内容哈希去重、产物本地策略）、`backend/internal/repository/batch_video.go`、`backend/internal/model/models_batch_video.go`、`backend/internal/handler/batch_video.go`；前端 `web/src/pages/batch-video/`、`web/src/services/api/batch-video.ts`；后台 `web/src/pages/admin/batch-video/settings-page.tsx` | 拥有独立的菜单、路由、表和服务端队列；分析和策划走 `canvas_text` 任务，生成走 `canvas_video` 任务；批量产物通过 metadata `storagePolicy` 强制本地；视频模型批量授权在渠道模型能力 JSON 的 `video.batchGeneration` |

@@ -471,6 +471,50 @@ CSV 使用中文表头、UTF-8 BOM、CRLF；金额按整数分精确转换为两
 
 `POST /api/admin/channels/:id/duplicate` 需要管理员权限，会复制指定系统渠道的连接配置、加密凭证、请求头、模型和价格档，生成新的渠道与模型 ID；复制渠道名称自动追加“ - 副本”。原渠道及其前台供应线路不受影响。
 
+## 批量生成视频
+
+功能开关为 `batchVideoEnabled`（后台“功能开放”）。接口统一挂在 `/api/batch-video` 下，项目的所有读写都校验当前用户归属。分析、策划和视频生成都走现有任务队列与计费，离开页面不会中断。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/batch-video/uploads` | 上传素材。`purpose` 仅支持 `material_image`、`material_video`、`material_document`；上传一律强制本地保存，视频参考图的 OSS 副本只能由服务端生成流程创建（客户端不能指定 `video_reference`）。文档仅接受 `.md`/`.txt`。按文件 SHA-256 去重。 |
+| `GET` | `/batch-video/settings` | 当前批量视频参数（标准轮、量产上限、重试次数等）。 |
+| `GET` | `/batch-video/models` | 已开启 `video.batchGeneration.enabled` 的视频模型。 |
+| `GET` | `/batch-video/planning-models` | 可用于素材分析与创意策划的文本模型，返回读图上限；素材包含图片时必须选择支持读图的模型，仅文档分析不要求视觉能力。 |
+| `GET` | `/batch-video/reference-models` | 可用于补充项目参考图的图片模型。 |
+| `GET` | `/batch-video/projects` | 项目列表，支持 `stage`、`page`、`pageSize`。 |
+| `POST` | `/batch-video/projects` | 创建项目并写入首批素材、文档和卖点。`name`、`productName` 必填，素材与文档至少提供一项；标准轮创意数量必须为 5–20 条。 |
+| `GET` | `/batch-video/projects/:id` | 项目详情：设置、素材批次、卖点、参考图、轮次、创意、任务与验收状态。 |
+| `PATCH` | `/batch-video/projects/:id/settings` | 修改时长、比例、标准数量、策划模型和参考图模型；已有分析会标记为 `stale`。 |
+| `POST` | `/batch-video/projects/:id/material-batches` | 追加素材批次。 |
+| `POST` | `/batch-video/projects/:id/analyze` | 创建素材分析任务，由策划模型输出产品档案、卖点和图片描述。 |
+| `POST` | `/batch-video/projects/:id/creatives/generate` | 创建创意策划任务。每 50 条拆成一个策划轮次，便于模型稳定输出和失败重试。标准轮至少 5 条、最多 20 条；量产轮最多 1000 条且需先解锁量产。 |
+| `GET` | `/batch-video/projects/:id/creatives` | 分页查询创意，支持 `roundId`、`reviewStatus`、`matchStatus`。 |
+| `PATCH` | `/batch-video/projects/:id/creatives/:creativeId` | 编辑创意标题、钩子、文案、视频与图片提示词。已提交生成的创意不能修改；保存后重置为待审核，且不允许与项目内已有创意完全重复。 |
+| `POST` | `/batch-video/projects/:id/creatives/:creativeId/rematch` | 按程序规则用创意的结构化图片需求重新匹配项目参考图池，结果重置为待审核；已提交生成的创意不能重新匹配。 |
+| `POST` | `/batch-video/projects/:id/creatives/:creativeId/review` | 单条审核。通过前必须有匹配的参考图。 |
+| `POST` | `/batch-video/projects/:id/creatives/review-batch` | 批量审核。 |
+| `POST` | `/batch-video/projects/:id/creatives/:creativeId/generate-reference` | 为缺图创意生成项目共享参考图，完成后自动回填匹配。 |
+| `GET/POST` | `/batch-video/projects/:id/reference-assets` | 项目共享参考图库。创意只引用资产，不复制描述。 |
+| `GET` | `/batch-video/projects/:id/validation` | 标准验收清单。 |
+| `POST` | `/batch-video/projects/:id/unlock-mass` | 标准验收全部通过后解锁量产。 |
+| `POST` | `/batch-video/projects/:id/preflight` | 提交前预检，与正式提交共用同一套授权、快照、计价与容量校验。 |
+| `POST` | `/batch-video/projects/:id/submit` | 提交已通过创意。`allApproved=true` 提交全部；`mode` 为 `single`（失败切换模型）或 `multi`（同时提交多个模型）。未解锁量产时单次最多提交标准上限（5–20 条），解锁量产后单轮最多 1000 条。 |
+| `POST` | `/batch-video/projects/:id/cancel-pending` | 取消项目内全部未开始（waiting）的生成任务；已提交上游的任务不受影响。 |
+| `GET` | `/batch-video/projects/:id/jobs` | 分页查询生成任务。 |
+| `GET` | `/batch-video/projects/:id/jobs/:jobId/attempts` | 单个任务的尝试历史（含模型切换与重试结果）。 |
+| `POST` | `/batch-video/projects/:id/jobs/:jobId/retry` | 单个失败任务重新排队。 |
+| `POST` | `/batch-video/projects/:id/retry-failed` | 重试项目内全部失败任务。 |
+| `POST` | `/batch-video/projects/:id/pause` / `resume` | 暂停或继续服务端调度。运行中的上游任务不受影响。 |
+| `GET` | `/batch-video/projects/:id/stats` | 创意、审核与任务计数。 |
+| `GET/PUT` | `/admin/batch-video/settings` | 管理员集中配置标准验收（5–20 条）、量产上限（最多 1000）、参考图池和每模型重试次数。 |
+
+服务端强制规则：
+- 提交的每个模型必须启用、属于视频能力，并在渠道模型能力中显式开启 `video.batchGeneration.enabled`；前端隐藏不构成授权。
+- 同一模型连续失败达到 `maxAttemptsPerModel` 后才切换到下一个候选模型，总尝试次数上限为模型数 × 每模型次数。
+- 批量任务在输入 metadata 写入 `storagePolicy=local_only_except_video_reference`，生成视频、图片和播放副本强制本地。
+- 标准验收要求：创意数量、全部审核通过、最少成功数、成功率、模板覆盖，以及至少一个视频模型成功。未解锁量产时单次提交超过标准上限会被拒绝。
+
 ## 信封
 
 成功：

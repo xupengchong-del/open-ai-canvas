@@ -361,3 +361,27 @@ Schema 61 为 `channel_models` 新增 `upstream_price_note`（TEXT、NOT NULL、
 迁移 46 新增 skill_curation_settings、skill_curation_categories、skill_curation_assignments；默认关闭，不导入技能内容。表结构与事务规则见 [平台技能策展](./skill-curation)。
 
 迁移 47 依赖 46，新增 skill_curation_roots 与 skill_curation_root_assignments；保留原五个根 ID，根停用时使用派生默认桶，根表为空回落固定五类。
+
+## 批量生成视频
+
+Schema 62 新增批量视频独立表，不复用画布批次或节点 metadata：
+
+| 表 | 用途 |
+| --- | --- |
+| `batch_video_projects` | 项目（一个产品一个项目）、阶段、产品档案、策划分析任务与量产解锁时间 |
+| `batch_video_material_batches` | 素材批次快照（图片资源引用、文档文本）与增量分析结果 |
+| `batch_video_selling_points` | 项目级卖点，带来源、证据、置信度和使用次数 |
+| `batch_video_reference_assets` | 项目共享参考图库；图片资源、描述、标签和内容哈希 |
+| `batch_video_creative_references` | 创意与参考图的多对多引用，保留资产版本和用法说明 |
+| `batch_video_creative_rounds` | 策划轮次；每 50 条拆一轮，记录策划任务、模型和错误 |
+| `batch_video_creatives` | 文案、钩子、视频提示词、参考图匹配、审核状态和去重哈希 |
+| `batch_video_generation_jobs` | 服务端持久队列；候选模型模板、当前任务、尝试次数和模型切换次数 |
+| `batch_video_attempts` | 每次上游调用记录，用于统计模型内重试与切换 |
+| `batch_video_standard_validations` | 标准验收快照与解锁记录 |
+| `resource_storage_variants` | 同一逻辑资源的派生存储副本；批量视频只允许 `video_reference` 产生 OSS 副本 |
+
+Schema 62 同时为 `resources` 新增 `content_hash`（SHA-256，可空）和用户维度唯一索引 `idx_resources_user_content_provider(user_id, content_hash, provider)`。批量视频上传先按哈希复用同一用户的本地资源；并发重复上传由唯一索引兜底。索引允许 `content_hash IS NULL` 的历史资源继续存在。
+
+Schema 63 为 `batch_video_reference_assets` 新增 `generation_task_id`、`creative_id` 和 `generation_error`，用于创意缺图时按图片提示词生成参考图，并在任务完成后回填匹配。生成图沿用同一 `storagePolicy` 强制本地。
+
+批量视频生成任务的输入 metadata 固定写入 `storagePolicy=local_only_except_video_reference`；任务产物保存时读取该标记并强制本地，不跟随全局“生成视频存储策略”。只有批量上传入口的 `video_reference` 用途允许跟随全局 OSS 配置。

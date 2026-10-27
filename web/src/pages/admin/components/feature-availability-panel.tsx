@@ -9,7 +9,7 @@ import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store"
 import { AdminStatusBadge } from "./admin-ui";
 
 type FeatureKey =
-    "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "inspirationSourcesVisible" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers" | "imageWorkbenchEnabled" | "videoWorkbenchEnabled";
+    "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "inspirationSourcesVisible" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers" | "imageWorkbenchEnabled" | "videoWorkbenchEnabled" | "batchVideoEnabled";
 type FeatureRow = {
     key: FeatureKey;
     title: string;
@@ -26,6 +26,7 @@ const editableFeatureKeys: FeatureKey[] = [
     "inspirationSourcesVisible",
     "imageWorkbenchEnabled",
     "videoWorkbenchEnabled",
+    "batchVideoEnabled",
     "frontendModelsEnabled",
     "pluginCenterEnabled",
     "systemPluginsVisibleToUsers",
@@ -72,6 +73,12 @@ const workspaceFeatureRows: FeatureRow[] = [
         key: "videoWorkbenchEnabled",
         title: "视频生成",
         description: "开放视频入口并允许创建新的工作台视频任务；关闭不删除结果和历史。",
+        icon: <Clapperboard className="size-4" aria-hidden="true" />,
+    },
+    {
+        key: "batchVideoEnabled",
+        title: "批量生成视频",
+        description: "开放批量视频入口、素材分析、创意策划和批量提交；关闭不删除已有项目。",
         icon: <Clapperboard className="size-4" aria-hidden="true" />,
     },
 ];
@@ -384,6 +391,7 @@ function toEditablePayload(features: FeatureAvailability) {
         inspirationSourcesVisible: features.inspirationSourcesVisible,
         imageWorkbenchEnabled: features.imageWorkbenchEnabled,
         videoWorkbenchEnabled: features.videoWorkbenchEnabled,
+        batchVideoEnabled: features.batchVideoEnabled,
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
         systemPluginsVisibleToUsers: features.systemPluginsVisibleToUsers,
@@ -409,6 +417,7 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         inspirationSourcesVisible: record.inspirationSourcesVisible as boolean,
         imageWorkbenchEnabled: record.imageWorkbenchEnabled as boolean,
         videoWorkbenchEnabled: record.videoWorkbenchEnabled as boolean,
+        batchVideoEnabled: record.batchVideoEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,
         systemPluginsVisibleToUsers: record.systemPluginsVisibleToUsers as boolean,

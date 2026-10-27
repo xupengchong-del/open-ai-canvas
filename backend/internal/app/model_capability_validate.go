@@ -193,6 +193,9 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if len(value.Operations) == 0 || strings.TrimSpace(value.DefaultOperation) == "" || !containsCapabilityString(value.Operations, value.DefaultOperation) {
 		return BadAuthRequest("请至少配置一个生成模式，并选择默认模式")
 	}
+	if value.BatchGeneration.MaxItems < 0 || value.BatchGeneration.MaxItems > 1000 {
+		return BadAuthRequest("批量视频单批最多条数必须在 0-1000 之间")
+	}
 	return validateVideoProcessingConfig(value.Processing)
 }
 

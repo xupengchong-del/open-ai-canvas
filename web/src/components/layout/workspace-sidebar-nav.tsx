@@ -47,6 +47,7 @@ function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[];
             items: [
                 { ...toolItem("create", "/"), id: "home", title: "创作" },
                 ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects"), title: "短剧制作" }] : []),
+                ...(features.batchVideoEnabled ? [{ ...toolItem("batch-video", "/batch-video"), title: "批量生成视频" }] : []),
                 { ...toolItem("canvas", "/canvas"), title: "自由画布" },
             ],
         },

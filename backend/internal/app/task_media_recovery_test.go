@@ -445,3 +445,51 @@ func TestMediaRecoveryAudioKeepsAllReturnedResults(t *testing.T) {
 		t.Fatal("legacy singular audio result missing")
 	}
 }
+
+func TestMediaRecoveryBatchVideoEncryptedInputForcesLocalWithoutPersistingPlaintext(t *testing.T) {
+	s, db := newMediaRecoveryTestService(t)
+	seedSystemOSSStorageTarget(t, s, storage.VideoStorageTargetOSS)
+	seedOSSEnabled(t, db, "media-user", "http://127.0.0.1:1")
+	encryptedKey, err := s.encryptSettingSecret("batch-video-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := json.Marshal(canvasGenerationInput{
+		Mode:   "image",
+		Config: providerConfig{APIKey: encryptedKey},
+		Metadata: map[string]interface{}{
+			"storagePolicy": BatchVideoLocalStoragePolicy,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := seedMediaTask(t, db, providerConfig{})
+	task.InputJSON = string(input)
+	if err := db.Model(task).Update("input_json", task.InputJSON).Error; err != nil {
+		t.Fatal(err)
+	}
+	temp, err := s.stageInlineMedia(mediaTestPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := &mediaCheckpoint{Mode: "image", StartedAt: time.Now(), Items: []mediaCheckpointItem{{TempName: temp, MIMEType: "image/png"}}}
+	if err := s.saveMediaCheckpoint(task, checkpoint, "upload"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.resumeTaskMedia(context.Background(), task); err != nil {
+		t.Fatalf("batch video recovery did not force local storage: %v", err)
+	}
+	resource, err := s.resourceForUploadKey(task.UserID, mediaUploadKey(task.ID, 0))
+	if err != nil || resource == nil || resource.Provider != "local" || resource.Status != model.ResourceStatusReady {
+		t.Fatalf("recovered resource is not ready locally: %+v %v", resource, err)
+	}
+	persisted, err := s.repo.Task(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.InputJSON != string(input) || strings.Contains(persisted.InputJSON, "batch-video-secret") {
+		t.Fatal("recovery persisted decrypted task input")
+	}
+}

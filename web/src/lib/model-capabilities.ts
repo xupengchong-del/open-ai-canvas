@@ -132,6 +132,8 @@ export type VideoCapabilityConfig = {
     defaultOperation: string;
     /** 仅 kind=processing 的视频处理模型（如画质增强）配置；生成模型为空。 */
     processing?: VideoProcessingConfig;
+    /** 批量视频应用层授权；默认关闭，不代表上游支持一次请求多输出。 */
+    batchGeneration: { enabled: boolean; maxItems: number };
 };
 
 export type VideoProcessingFpsPolicy = "keep_source" | "user_select";
@@ -213,6 +215,10 @@ export function normalizeModelCapabilityConfig(config: ModelCapabilityConfig): M
                   defaultResolution: normalizeCapabilityString(config.video.defaultResolution),
                   operations: normalizeCapabilityStrings(config.video.operations),
                   defaultOperation: normalizeCapabilityString(config.video.defaultOperation),
+                  batchGeneration: {
+                      enabled: config.video.batchGeneration?.enabled === true,
+                      maxItems: config.video.batchGeneration?.maxItems || 20,
+                  },
               })
             : undefined,
     };
@@ -471,6 +477,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         watermark: { supported: false, default: false },
         operations: ["text_to_video", "image_to_video"],
         defaultOperation: "text_to_video",
+        batchGeneration: { enabled: false, maxItems: 20 },
     };
     if (protocol === "volcengine-jimeng-video") {
         video.duration = { selection: "enum", values: [5, 10], default: 5 };

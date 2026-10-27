@@ -226,6 +226,33 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
                             {processingFields}
                         </ProtocolParameterCard>
                     ) : null}
+                    {!processing ? (
+                        <ProtocolParameterCard step="04" title="批量视频授权" description="应用层授权，默认关闭；不代表上游支持一次请求多输出">
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2.5">
+                                <div className="min-w-0">
+                                    <div className="text-xs font-medium">允许用于批量视频</div>
+                                    <div className="text-[var(--fs-tiny)] text-foreground/45">仅对单价低、并发额度充足的模型开启</div>
+                                </div>
+                                <Switch
+                                    aria-label="允许用于批量视频"
+                                    size="sm"
+                                    disabled={disabled}
+                                    checked={profile.batchGeneration.enabled}
+                                    onChange={(enabled) => update({ batchGeneration: { ...profile.batchGeneration, enabled } })}
+                                />
+                            </div>
+                            {profile.batchGeneration.enabled ? (
+                                <NumberField
+                                    label="单次最多创意数（1-1000）"
+                                    value={profile.batchGeneration.maxItems}
+                                    min={1}
+                                    max={1000}
+                                    disabled={disabled}
+                                    onChange={(value) => update({ batchGeneration: { ...profile.batchGeneration, maxItems: value || 20 } })}
+                                />
+                            ) : null}
+                        </ProtocolParameterCard>
+                    ) : null}
                 </div>
             </div>
         );

@@ -140,6 +140,14 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		snapshot.Direct = append(snapshot.Direct, ResourceDirectReference{Kind: "Agent 待执行引用", ID: lease.OwnerID, Title: "已准备的生成输入", ResourceID: lease.ResourceID})
 	}
 
+	var batchVideoReferences []model.BatchVideoReferenceAsset
+	if err := r.db.Where("user_id = ? AND resource_id IN ?", userID, resourceIDs).Find(&batchVideoReferences).Error; err != nil {
+		return snapshot, err
+	}
+	for _, reference := range batchVideoReferences {
+		snapshot.Direct = append(snapshot.Direct, ResourceDirectReference{Kind: "批量视频参考素材", ID: reference.ID, Title: reference.Title, ResourceID: reference.ResourceID})
+	}
+
 	var toolRecords []model.Tool
 	if err := r.db.Where("owner_id = ?", userID).Find(&toolRecords).Error; err != nil {
 		return snapshot, err

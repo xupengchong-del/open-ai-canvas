@@ -3627,3 +3627,18 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 已验证：`go test ./... -count=1 -timeout=20m`、`go vet ./...`、`go build ./...`、前端 2716 项测试、`bun run lint`、`bun run build` 通过；数据库与API迁移测试包含SQLite。四篇修改后的MDX逐篇编译及OpenAPI引用解析通过。
 - 环境阻塞：文档站 `bun run types:check` 在 MDX 扫描前失败，当前忽略的 `docs/node_modules/fdir/dist/index.mjs` 调用了 `Dirent.isPrevisy()`（Node Dirent 无此方法）；为避免改依赖，本轮未继续修补 node_modules。
 - [ ] 真实模型/收费生成与多次运行pass^k、provider缓存命中率、PostgreSQL 58迁移、浏览器记忆提案与历史撤销尚未人工验收。
+
+## 批量生成视频
+
+- 已实现：独立项目/素材批次/卖点/参考图/创意/轮次/生成任务表（schema 62）；素材分析与创意策划走 `canvas_text` 任务；生成走服务端持久队列，支持每模型重试上限、失败切换模型、暂停/继续和批量重试；标准验收通过后才能解锁量产。
+- 已实现：批量上传按 SHA-256 去重；非 `video_reference` 用途强制本地；生成任务 metadata 写入 `storagePolicy=local_only_except_video_reference`，产物保存时不跟随全局 OSS 策略。
+- 已实现：参考图池硬上限（标准/量产）和单轮新增上限；创意缺少参考图时可提交图片生成任务，完成后自动回填创意匹配。
+- 已实现（一致性修正轮）：仅文档（无图片）也可创建项目并分析，含图片时策划模型必须支持读图；后端不再要求手动文档名带 `.md`/`.txt` 后缀；标准轮创意数量全链路统一为 5–20 条（默认值、归一化、创建、策划生成、策划弹窗、后台设置），量产单轮/单项目上限 1000；新建向导改为“产品与素材 → 参数与模型 → 确认创建”，产品名必填并可选择参考图模型；创意详情抽屉支持编辑标题/钩子/文案/视频与图片提示词（`PATCH .../creatives/:creativeId`）和程序重新匹配参考图（`POST .../creatives/:creativeId/rematch`），已提交生成的创意禁止修改，保存后重置为待审核并阻断完全重复；策划拆轮改为每 50 条一轮；OpenAPI 与 HTTP API 文档已同步（含 preflight、cancel-pending、attempts 端点）。
+- 已验证（一致性修正轮）：`go test ./internal/app -run 'TestBatchVideo|TestDecodeBatchVideo' -count=1` 通过（含仅文档创建、空文档拒绝、创意编辑重置审核、已提交禁止编辑、跨项目拒绝、程序重新匹配等用例）；前端 `bun run build`（tsc + vite）通过。
+- 已验证：后端 `go build ./cmd/server` 通过；`go test ./internal/repository ./internal/handler ./internal/model ./internal/database` 全部通过；全新数据目录启动自动应用 schema 63（含 `batch_video_reference_assets`）并注册 29 条批量视频路由，未登录访问设置/参考图模型接口返回 401；前端 `tsc --noEmit`、`bun run build`、新文件 eslint 通过；接口冒烟覆盖设置、模型列表、上传去重、创建项目、设置更新和分析/策划错误路径；界面结构已在真实路由检查项目列表、新建向导、概览、创意/任务/素材页、策划/提交弹窗和后台设置，但当前环境无法截取画面，视觉与明暗主题未验收。
+- 环境说明：`go test ./internal/app` 除 6 个 Cloud Agent live 回归外通过；这 6 项单独运行时因本机 `backend/agent-runtime/pi` 缺少 `undici` 失败，与本功能无关。
+- [ ] 在真实登录态与已配置视觉文本模型/批量视频模型的环境中，完整跑通：新建项目 → 素材分析 → 策划 → 审核 → 提交 → 失败切换/重试 → 标准验收 → 解锁量产。
+- [ ] 浏览器验收项目列表、新建向导、概览、创意审核、生成任务、素材与档案、后台批量视频设置，以及明暗主题与窄屏布局。
+- [ ] 验证 1000 条量产规模下的分页、并发上限、预算/积分不足拦截和参考图池上限。
+- [ ] 浏览器验收创意详情抽屉：编辑保存后转为待审核、重新匹配提示、已提交创意的禁用态。
+- [ ] 未实现项（设计文档已标注）：弱匹配 Top 3–5 模型复核、参考图需求指纹分组预算、增量素材分析合并、提交预算/幂等/限流、模式 b 创意级统计、多项目公平调度、千条级压测与重启故障注入。

@@ -224,6 +224,40 @@ func TestDeleteAssetStillRejectsLiveCanvasResourceReference(t *testing.T) {
 	}
 }
 
+func TestDeleteAssetRejectsBatchVideoReferenceResource(t *testing.T) {
+	svc, db, _ := newResourceDeletionTestService(t)
+	resource := model.Resource{ID: "resource-batch-video", UserID: "user-1", Provider: "local", ObjectKey: "users/user-1/image/reference.png", Status: model.ResourceStatusReady}
+	asset := model.Asset{ID: "asset-batch-video", UserID: "user-1", Title: "参考图素材", PayloadJSON: `{"data":{"storageKey":"resource:resource-batch-video"}}`}
+	project := model.BatchVideoProject{ID: "batch-project", UserID: "user-1", Name: "批量视频项目"}
+	reference := model.BatchVideoReferenceAsset{ID: "batch-reference", ProjectID: project.ID, UserID: "user-1", ResourceID: resource.ID, Title: "产品主视觉"}
+	for _, item := range []any{&resource, &asset, &project, &reference} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := svc.DeleteUserAsset("user-1", asset.ID)
+	if err == nil || !strings.Contains(err.Error(), "批量视频参考素材「产品主视觉」") {
+		t.Fatalf("DeleteUserAsset() error = %v, want batch video reference source", err)
+	}
+	if err := svc.cleanupDetachedUserResources("user-1", []model.Resource{resource}); err != nil {
+		t.Fatal(err)
+	}
+	var assetCount, resourceCount, jobCount int64
+	if err := db.Model(&model.Asset{}).Where("id = ?", asset.ID).Count(&assetCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Resource{}).Where("id = ?", resource.ID).Count(&resourceCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.ResourceDeletionJob{}).Count(&jobCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if assetCount != 1 || resourceCount != 1 || jobCount != 0 {
+		t.Fatalf("protected reference was deleted: asset=%d resource=%d jobs=%d", assetCount, resourceCount, jobCount)
+	}
+}
+
 func TestDeleteGeneratedAssetTaskReferences(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

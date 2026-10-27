@@ -110,6 +110,13 @@ type VideoCapabilityConfig struct {
 	// Processing 只用于 kind=processing 的视频处理 provider（如画质增强），
 	// 生成类模型保持 nil。
 	Processing *VideoProcessingConfig `json:"processing,omitempty"`
+	// BatchGeneration 是批量视频模块的应用层授权，不代表上游支持一次请求多视频。
+	BatchGeneration VideoBatchGenerationConfig `json:"batchGeneration"`
+}
+
+type VideoBatchGenerationConfig struct {
+	Enabled  bool `json:"enabled"`
+	MaxItems int  `json:"maxItems"`
 }
 
 const (
@@ -269,6 +276,12 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		return nil, BadAuthRequest("请配置视频模型能力参数")
 	}
 	video := applyModelSpecificVideoCapability(input.Video, protocol, modelName)
+	if video.BatchGeneration.MaxItems <= 0 {
+		video.BatchGeneration.MaxItems = 20
+	}
+	if video.BatchGeneration.MaxItems > 1000 {
+		video.BatchGeneration.MaxItems = 1000
+	}
 	if strings.TrimSpace(protocol) == "autodl-comfyui" {
 		var err error
 		video, err = normalizeAutoDLVideoScreenSpec(video, modelName)

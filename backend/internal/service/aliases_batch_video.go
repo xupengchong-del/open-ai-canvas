@@ -1,0 +1,25 @@
+package service
+
+import "yingce/backend/internal/app"
+
+type BatchVideoSettings = app.BatchVideoSettings
+type BatchVideoProjectSettings = app.BatchVideoProjectSettings
+type BatchVideoMaterialInput = app.BatchVideoMaterialInput
+type BatchVideoDocumentInput = app.BatchVideoDocumentInput
+type BatchVideoSellingPointInput = app.BatchVideoSellingPointInput
+type CreateBatchVideoProjectInput = app.CreateBatchVideoProjectInput
+type BatchVideoProjectDetail = app.BatchVideoProjectDetail
+type BatchVideoProjectSummary = app.BatchVideoProjectSummary
+type BatchVideoProjectCounts = app.BatchVideoProjectCounts
+type BatchVideoMaterialBatchView = app.BatchVideoMaterialBatchView
+type BatchVideoReferenceAssetInput = app.BatchVideoReferenceAssetInput
+type GenerateBatchVideoCreativesInput = app.GenerateBatchVideoCreativesInput
+type UpdateBatchVideoCreativeInput = app.UpdateBatchVideoCreativeInput
+type BatchVideoCreativeRoundResult = app.BatchVideoCreativeRoundResult
+type BatchVideoValidationCheck = app.BatchVideoValidationCheck
+type BatchVideoValidationState = app.BatchVideoValidationState
+type BatchVideoSubmitModel = app.BatchVideoSubmitModel
+type BatchVideoSubmitInput = app.BatchVideoSubmitInput
+type BatchVideoSubmissionPreflight = app.BatchVideoSubmissionPreflight
+type BatchVideoTaskCandidate = app.BatchVideoTaskCandidate
+type BatchVideoTaskTemplate = app.BatchVideoTaskTemplate

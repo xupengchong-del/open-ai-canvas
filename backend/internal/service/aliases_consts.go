@@ -48,6 +48,7 @@ const (
 	FeatureTaskCenter                  = app.FeatureTaskCenter
 	FeatureTimelineTranscription       = app.FeatureTimelineTranscription
 	FeatureVideoWorkbench              = app.FeatureVideoWorkbench
+	FeatureBatchVideo                  = app.FeatureBatchVideo
 	ModelCatalogSourceSystem           = app.ModelCatalogSourceSystem
 	PaymentPluginAlipayPage            = app.PaymentPluginAlipayPage
 	PaymentPluginWeChatNative          = app.PaymentPluginWeChatNative

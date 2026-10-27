@@ -34,6 +34,7 @@ const (
 	FeatureTimelineTranscription = platform.FeatureTimelineTranscription
 	FeatureImageWorkbench        = platform.FeatureImageWorkbench
 	FeatureVideoWorkbench        = platform.FeatureVideoWorkbench
+	FeatureBatchVideo            = platform.FeatureBatchVideo
 )
 
 type platformHost struct {

@@ -26,10 +26,508 @@ tags:
   - name: agent
   - name: admin
   - name: skills
+  - name: batch-video
+    description: 批量生成视频（独立项目、策划、审核与服务端生成队列）
   - name: workbench
   - name: feedback
     description: 用户反馈与管理员收件箱
 paths:
+  /batch-video/settings:
+    get:
+      tags: [batch-video]
+      summary: 读取批量视频参数
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/models:
+    get:
+      tags: [batch-video]
+      summary: 列出已授权批量生成的视频模型
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/planning-models:
+    get:
+      tags: [batch-video]
+      summary: 列出可用于策划的文本模型（含读图上限；素材包含图片时需要选择支持读图的模型，仅文档分析不要求视觉能力）
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/reference-models:
+    get:
+      tags: [batch-video]
+      summary: 列出可用于补充参考图的图片模型
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/uploads:
+    post:
+      tags: [batch-video]
+      summary: 上传批量视频素材
+      description: purpose 仅支持 material_image、material_video、material_document；上传一律强制本地保存（视频参考图的 OSS 副本只能由服务端生成流程创建，客户端不能指定 video_reference）。文档仅接受 .md/.txt 纯文本。按 SHA-256 去重。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, purpose]
+              properties:
+                file: {type: string, format: binary}
+                purpose: {type: string, enum: [material_image, material_video, material_document]}
+                kind: {type: string}
+                width: {type: integer}
+                height: {type: integer}
+                durationMs: {type: integer}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects:
+    get:
+      tags: [batch-video]
+      summary: 分页列出当前用户的项目
+      parameters:
+        - {in: query, name: stage, schema: {type: string}}
+        - {in: query, name: page, schema: {type: integer, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, default: 20}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+    post:
+      tags: [batch-video]
+      summary: 创建项目并写入首批素材
+      description: name、productName 必填；materials 与 documents 至少提供一项（可只凭卖点文档创建）。标准轮创意数量必须为 5–20 条。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, productName]
+              properties:
+                name: {type: string}
+                productName: {type: string}
+                settings:
+                  type: object
+                  properties:
+                    durationSeconds: {type: integer}
+                    aspectRatio: {type: string}
+                    standardCreativeCount: {type: integer, minimum: 5, maximum: 20}
+                    planningChannelModelId: {type: string, description: 素材包含图片时必须是支持读图的文本渠道模型}
+                    referenceModelId: {type: string, description: 用于补充生成参考图的图片渠道模型，可选}
+                materials:
+                  type: array
+                  items:
+                    type: object
+                    required: [resourceId, kind]
+                    properties:
+                      resourceId: {type: string}
+                      kind: {type: string}
+                      title: {type: string}
+                      description: {type: string}
+                      tags: {type: array, items: {type: string}}
+                documents:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: {type: string}
+                      text: {type: string}
+                sellingPoints:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      text: {type: string}
+                      evidence: {type: string}
+                      source: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}:
+    get:
+      tags: [batch-video]
+      summary: 读取项目详情
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/settings:
+    patch:
+      tags: [batch-video]
+      summary: 修改项目参数，已有分析标记为过期
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                durationSeconds: {type: integer}
+                aspectRatio: {type: string}
+                standardCreativeCount: {type: integer, minimum: 5, maximum: 20}
+                planningChannelModelId: {type: string}
+                referenceModelId: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/material-batches:
+    post:
+      tags: [batch-video]
+      summary: 追加素材批次
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: {type: string}
+                materials: {type: array, items: {type: object}}
+                documents: {type: array, items: {type: object}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/analyze:
+    post:
+      tags: [batch-video]
+      summary: 创建素材分析任务
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/creatives/generate:
+    post:
+      tags: [batch-video]
+      summary: 创建创意策划任务（每 50 条拆一轮）
+      description: 标准轮 count 必须为 5–20；量产轮最多 1000 条且需先通过标准验收解锁量产。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [count]
+              properties:
+                count: {type: integer, minimum: 1, maximum: 1000}
+                mode: {type: string, enum: [standard, mass]}
+                templates: {type: array, items: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/creatives:
+    get:
+      tags: [batch-video]
+      summary: 分页查询创意
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: roundId, schema: {type: string}}
+        - {in: query, name: reviewStatus, schema: {type: string, enum: [pending, approved, rejected]}}
+        - {in: query, name: matchStatus, schema: {type: string}}
+        - {in: query, name: page, schema: {type: integer}}
+        - {in: query, name: pageSize, schema: {type: integer}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/creatives/{creativeId}:
+    patch:
+      tags: [batch-video]
+      summary: 编辑创意内容（标题、钩子、文案、视频与图片提示词）
+      description: 已提交生成的创意不能修改；保存后重置为待审核，且不允许与项目内已有创意完全重复。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: creativeId, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                hook: {type: string}
+                copywriting: {type: string}
+                videoPrompt: {type: string}
+                imagePrompt: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/creatives/{creativeId}/rematch:
+    post:
+      tags: [batch-video]
+      summary: 按程序规则为创意重新匹配项目参考图
+      description: 使用创意的结构化图片需求与已通过的项目参考图池重新匹配；匹配结果重置为待审核。已提交生成的创意不能重新匹配。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: creativeId, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/creatives/{creativeId}/review:
+    post:
+      tags: [batch-video]
+      summary: 单条审核创意
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: creativeId, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: {type: string, enum: [approved, rejected]}
+                note: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/creatives/{creativeId}/generate-reference:
+    post:
+      tags: [batch-video]
+      summary: 为缺少参考图的创意生成项目共享参考图
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: creativeId, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/creatives/review-batch:
+    post:
+      tags: [batch-video]
+      summary: 批量审核创意
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, status]
+              properties:
+                ids: {type: array, items: {type: string}}
+                status: {type: string, enum: [approved, rejected]}
+                note: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/reference-assets:
+    get:
+      tags: [batch-video]
+      summary: 读取项目共享参考图库
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+    post:
+      tags: [batch-video]
+      summary: 追加参考图资产
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assets: {type: array, items: {type: object}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/validation:
+    get:
+      tags: [batch-video]
+      summary: 读取标准验收清单
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/unlock-mass:
+    post:
+      tags: [batch-video]
+      summary: 标准验收通过后解锁量产
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/preflight:
+    post:
+      tags: [batch-video]
+      summary: 提交前预检（与正式提交共用同一套授权、快照与容量校验）
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                creativeIds: {type: array, items: {type: string}}
+                allApproved: {type: boolean}
+                generationMode: {type: string, enum: [standard, mass]}
+                mode: {type: string, enum: [single, multi]}
+                models:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      channelModelId: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/submit:
+    post:
+      tags: [batch-video]
+      summary: 提交已通过创意
+      description: 每个模型必须启用且开启 video.batchGeneration.enabled。未解锁量产时单次最多提交标准阶段上限（5–20 条）；解锁量产后单轮最多 1000 条。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                creativeIds: {type: array, items: {type: string}}
+                allApproved: {type: boolean}
+                generationMode: {type: string, enum: [standard, mass]}
+                mode: {type: string, enum: [single, multi]}
+                models:
+                  type: array
+                  items:
+                    type: object
+                    required: [channelModelId]
+                    properties:
+                      channelModelId: {type: string}
+                      modelId: {type: string}
+                      model: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/jobs:
+    get:
+      tags: [batch-video]
+      summary: 分页查询生成任务
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: status, schema: {type: string}}
+        - {in: query, name: page, schema: {type: integer}}
+        - {in: query, name: pageSize, schema: {type: integer}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/cancel-pending:
+    post:
+      tags: [batch-video]
+      summary: 取消项目内全部未开始（waiting）的生成任务
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/jobs/{jobId}/attempts:
+    get:
+      tags: [batch-video]
+      summary: 查询单个生成任务的尝试历史（含模型切换与重试结果）
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: jobId, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/jobs/{jobId}/retry:
+    post:
+      tags: [batch-video]
+      summary: 重试单个失败任务
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: jobId, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/retry-failed:
+    post:
+      tags: [batch-video]
+      summary: 重试全部失败任务
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/pause:
+    post:
+      tags: [batch-video]
+      summary: 暂停服务端调度
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/resume:
+    post:
+      tags: [batch-video]
+      summary: 继续服务端调度
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/stats:
+    get:
+      tags: [batch-video]
+      summary: 读取项目计数
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /admin/batch-video/settings:
+    get:
+      tags: [batch-video, admin]
+      summary: 管理员读取批量视频配置
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+    put:
+      tags: [batch-video, admin]
+      summary: 管理员保存批量视频配置
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                standardCreativeCount: {type: integer, minimum: 5, maximum: 20}
+                standardMinSuccess: {type: integer}
+                standardSuccessRate: {type: number}
+                maxStandardCreatives: {type: integer, minimum: 5, maximum: 20}
+                maxMassCreatives: {type: integer, minimum: 1, maximum: 1000}
+                referencePoolStandard: {type: integer}
+                referencePoolMass: {type: integer}
+                maxNewReferencesPerRound: {type: integer}
+                maxAttemptsPerModel: {type: integer}
+                defaultSubmissionMode: {type: string, enum: [single, multi]}
+                samplingRate: {type: number}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
   /projects/{id}/assets/{assetId}/image:
     put:
       tags: [projects, assets]

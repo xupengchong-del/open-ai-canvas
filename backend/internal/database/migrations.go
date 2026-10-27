@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 61
+const CurrentSchemaVersion int64 = 64
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -35,6 +35,8 @@ const legacyWorkbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v5
 const channelModelUpstreamPriceNoteMigrationName = "channel_model_upstream_price_note"
 const channelModelUpstreamPriceNoteChecksum = "sha256:channel-model-upstream-price-note-v61-20261026"
 const legacyChannelModelUpstreamPriceNoteChecksum = "sha256:channel-model-upstream-price-note-v55-20261012"
+const batchVideoProductionChecksum = "sha256:batch-video-production-v62-20261026"
+const batchVideoReferenceGenerationChecksum = "sha256:batch-video-reference-generation-v63-20261026"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -208,6 +210,13 @@ var schemaMigrations = []migration{
 		return tx.AutoMigrate(&model.UserFeedback{})
 	}},
 	{version: 61, name: channelModelUpstreamPriceNoteMigrationName, checksum: channelModelUpstreamPriceNoteChecksum, apply: migrateChannelModelUpstreamPriceNote},
+	{version: 62, name: "batch_video_production", checksum: batchVideoProductionChecksum, apply: migrateBatchVideoProduction},
+	{version: 63, name: "batch_video_reference_generation", checksum: batchVideoReferenceGenerationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.BatchVideoReferenceAsset{})
+	}},
+	{version: 64, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v64", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{}, &model.BatchVideoAttempt{})
+	}},
 }
 
 func migrateChannelModelProtocolLength(tx *gorm.DB) error {
@@ -222,6 +231,23 @@ func migrateChannelModelUpstreamPriceNote(tx *gorm.DB) error {
 		return tx.Migrator().AddColumn(&model.ChannelModel{}, "UpstreamPriceNote")
 	}
 	return nil
+}
+
+func migrateBatchVideoProduction(tx *gorm.DB) error {
+	return tx.AutoMigrate(
+		&model.Resource{},
+		&model.ResourceStorageVariant{},
+		&model.BatchVideoProject{},
+		&model.BatchVideoMaterialBatch{},
+		&model.BatchVideoSellingPoint{},
+		&model.BatchVideoReferenceAsset{},
+		&model.BatchVideoCreativeReference{},
+		&model.BatchVideoCreativeRound{},
+		&model.BatchVideoCreative{},
+		&model.BatchVideoGenerationJob{},
+		&model.BatchVideoAttempt{},
+		&model.BatchVideoStandardValidation{},
+	)
 }
 
 func migratePrefixedIDSequenceReconcile(tx *gorm.DB) error {

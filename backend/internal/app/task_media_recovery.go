@@ -158,6 +158,8 @@ func (s *Service) resumeTaskMedia(ctx context.Context, task *model.Task) (map[st
 	if err != nil {
 		return nil, &mediaRecoveryError{stage: "checkpoint", cause: err}
 	}
+	// 仅在本次恢复使用的内存副本中保留明文，让本地存储策略可见；数据库仍保存密文。
+	task.InputJSON = raw
 	var input canvasGenerationInput
 	if err := json.Unmarshal([]byte(raw), &input); err != nil {
 		return nil, &mediaRecoveryError{stage: "checkpoint", cause: err}
@@ -182,7 +184,7 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 	if _, err := s.mediaTaskProject(task); err != nil {
 		return nil, &mediaRecoveryError{stage: "register", cause: err}
 	}
-	forceLocal := isGeneratedVisualKind(checkpoint.Mode) && s.isGeneratedVisualStorageTargetLocal()
+	forceLocal := TaskForcesLocalGeneratedMedia(task) || (isGeneratedVisualKind(checkpoint.Mode) && s.isGeneratedVisualStorageTargetLocal())
 	items := make([]interface{}, 0, len(checkpoint.Items))
 	for index := range checkpoint.Items {
 		item := &checkpoint.Items[index]

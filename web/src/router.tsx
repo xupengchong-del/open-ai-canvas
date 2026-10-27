@@ -26,6 +26,7 @@ const SkillCurationPage = lazy(() => import("@/pages/admin/skill-curation-page")
 const AdminPaymentsPage = lazy(() => import("@/pages/admin/payments/payments-page"));
 const LogsPage = lazy(() => import("@/pages/admin/logs/logs-page"));
 const TaskMonitorPage = lazy(() => import("@/pages/admin/tasks/tasks-page"));
+const BatchVideoSettingsPage = lazy(() => import("@/pages/admin/batch-video/settings-page"));
 const LoginLogsPage = lazy(() => import("@/pages/admin/login-logs/login-logs-page"));
 const RedemptionCodesPage = lazy(() => import("@/pages/admin/redemption-codes/redemption-codes-page"));
 const RuntimePolicySettingsPage = lazy(() => import("@/pages/admin/settings/runtime-policy-settings-page"));
@@ -56,6 +57,9 @@ const SkillsPage = lazy(() => import("@/pages/skills"));
 const PluginsPage = lazy(() => import("@/pages/plugins"));
 const EagleLibraryPage = lazy(() => import("@/pages/plugins/eagle"));
 const TasksPage = lazy(() => import("@/pages/tasks"));
+const BatchVideoListPage = lazy(() => import("@/pages/batch-video"));
+const BatchVideoNewPage = lazy(() => import("@/pages/batch-video/new"));
+const BatchVideoDetailPage = lazy(() => import("@/pages/batch-video/detail"));
 const ProjectsPage = lazy(loadProjectsPage);
 const ProjectDetailPage = lazy(loadProjectDetailPage);
 const SettingsPage = lazy(() => import("@/pages/settings"));
@@ -145,6 +149,30 @@ export const router = createBrowserRouter([
                     </RequireAuth>
                 ),
             },
+            {
+                path: "/batch-video",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="batchVideoEnabled">{deferred(<BatchVideoListPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            {
+                path: "/batch-video/new",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="batchVideoEnabled">{deferred(<BatchVideoNewPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            {
+                path: "/batch-video/:id",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="batchVideoEnabled">{deferred(<BatchVideoDetailPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
             { path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
             {
@@ -227,6 +255,7 @@ export const router = createBrowserRouter([
                     { path: "login-logs", element: <LoginLogsPage /> },
                     { path: "feedbacks", element: <AdminFeedbacksPage /> },
                     { path: "channels", element: <ChannelsPage /> },
+                    { path: "batch-video", element: <BatchVideoSettingsPage /> },
                     {
                         path: "models",
                         element: (

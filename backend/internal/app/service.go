@@ -185,6 +185,7 @@ func (s *Service) StartWorker() {
 		return
 	}
 	s.taskWorker().start(ctx)
+	s.startBatchVideoDispatcher(ctx)
 	s.startResourceDeletionWorker(ctx)
 	s.startSkillSyncWorker(ctx)
 	s.startPaymentWorker(ctx)
