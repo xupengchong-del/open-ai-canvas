@@ -43,6 +43,12 @@ func isGeneratedVisualKind(kind string) bool {
 	return kind == "image" || kind == "video"
 }
 
+// 画布生成的视频由浏览器经普通上传/导入接口回传，与任务落盘路径共用同一份「生成结果存储策略」。
+// 图片不在此列：批量视频参考图依赖对象存储提供公网地址。
+func (s *Service) uploadForcesLocalStorage(kind string) bool {
+	return kind == "video" && s.isGeneratedVisualStorageTargetLocal()
+}
+
 func (s *Service) uploadLocalResource(userID string, header *multipart.FileHeader, kind string, width int, height int, durationMs int64, uploadIdentity ...string) (*model.Resource, error) {
 	return s.uploadResource(userID, header, kind, width, height, durationMs, true, uploadIdentity...)
 }
@@ -71,6 +77,9 @@ func (s *Service) uploadResource(userID string, header *multipart.FileHeader, ki
 	}
 	if !(forceLocal && (kind == "live2d" || kind == "agent-avatar-bundle")) {
 		kind = uploadedResourceKind(mimeType)
+	}
+	if !forceLocal && s.uploadForcesLocalStorage(kind) {
+		forceLocal = true
 	}
 	if existing != nil {
 		return s.retryStoredResource(userID, existing, kind, mimeType, header.Size, file)
@@ -125,6 +134,7 @@ func (s *Service) uploadResourceFile(userID, reservationID, fileName string, siz
 		return nil, err
 	}
 	kind = uploadedResourceKind(mimeType)
+	forceLocal := s.uploadForcesLocalStorage(kind)
 	if existing != nil {
 		if reservationID != "" {
 			if err := s.ReleaseChunkUploadSession(userID, reservationID); err != nil {
@@ -134,14 +144,14 @@ func (s *Service) uploadResourceFile(userID, reservationID, fileName string, siz
 		return s.retryStoredResource(userID, existing, kind, mimeType, size, file)
 	}
 	if reservationID != "" {
-		resource, _, err := s.storeResource(userID, kind, fileName, mimeType, size, width, height, durationMs, file, uploadKey, false, reservationID)
+		resource, _, err := s.storeResource(userID, kind, fileName, mimeType, size, width, height, durationMs, file, uploadKey, forceLocal, reservationID)
 		return resource, err
 	}
 	day, err := s.reserveChunkedUploadQuota(userID, size)
 	if err != nil {
 		return nil, err
 	}
-	resource, stored, err := s.storeResource(userID, kind, fileName, mimeType, size, width, height, durationMs, file, uploadKey, false)
+	resource, stored, err := s.storeResource(userID, kind, fileName, mimeType, size, width, height, durationMs, file, uploadKey, forceLocal)
 	if err != nil {
 		s.releaseUserUploadQuota(userID, day, size)
 	} else if stored {
@@ -207,7 +217,7 @@ func (s *Service) ImportResourceURL(userID string, rawURL string, kind string, w
 	if err != nil {
 		return nil, err
 	}
-	resource, stored, err := s.storeResource(userID, kind, payload.fileName, payload.mimeType, size, width, height, durationMs, bytes.NewReader(payload.data), uploadKey, false)
+	resource, stored, err := s.storeResource(userID, kind, payload.fileName, payload.mimeType, size, width, height, durationMs, bytes.NewReader(payload.data), uploadKey, s.uploadForcesLocalStorage(kind))
 	if err != nil {
 		s.releaseUserUploadQuota(userID, day, size)
 	} else if stored {

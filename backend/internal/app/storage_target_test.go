@@ -1,8 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,6 +101,96 @@ func generatedImageResult(data []byte) map[string]interface{} {
 			"dataUrl":  dataURL("image/png", data),
 			"mimeType": "image/png",
 		}},
+	}
+}
+
+// 画布生成的视频由浏览器回传，走普通上传接口；它必须和任务落盘路径遵守同一份存储策略。
+func mediaTestMP4() []byte {
+	return []byte("\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
+}
+
+func videoUploadHeader(t *testing.T, data []byte) *multipart.FileHeader {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", `form-data; name="file"; filename="clip.mp4"`)
+	h.Set("Content-Type", "video/mp4")
+	p, err := w.CreatePart(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Write(data)
+	w.Close()
+	form, err := multipart.NewReader(&buf, w.Boundary()).ReadForm(1 << 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { form.RemoveAll() })
+	return form.File["file"][0]
+}
+
+func TestUploadVideoHonorsLocalStorageTarget(t *testing.T) {
+	svc := newResourceTestService(t)
+	seedSystemOSSStorageTarget(t, svc, storage.VideoStorageTargetLocal)
+
+	resource, err := svc.UploadResource("user-1", videoUploadHeader(t, mediaTestMP4()), "video", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("UploadResource() error = %v", err)
+	}
+	if resource.Kind != "video" {
+		t.Fatalf("resource.Kind = %q, want video", resource.Kind)
+	}
+	assertLocalResourceStored(t, svc, "user-1", resource.ID)
+}
+
+func TestUploadVideoFileHonorsLocalStorageTarget(t *testing.T) {
+	svc := newResourceTestService(t)
+	seedSystemOSSStorageTarget(t, svc, storage.VideoStorageTargetLocal)
+
+	data := mediaTestMP4()
+	resource, err := svc.UploadResourceFile("user-1", "clip.mp4", int64(len(data)), "video", 0, 0, 0, bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("UploadResourceFile() error = %v", err)
+	}
+	assertLocalResourceStored(t, svc, "user-1", resource.ID)
+}
+
+func TestImportVideoHonorsLocalStorageTarget(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	svc := newResourceTestService(t)
+	seedSystemOSSStorageTarget(t, svc, storage.VideoStorageTargetLocal)
+
+	data := mediaTestMP4()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	resource, err := svc.ImportResourceURL("user-1", server.URL+"/clip.mp4", "video", 0, 0, 0, "import-video")
+	if err != nil {
+		t.Fatalf("ImportResourceURL() error = %v", err)
+	}
+	assertLocalResourceStored(t, svc, "user-1", resource.ID)
+}
+
+func TestUploadVideoStillUsesOSSWhenStorageTargetIsOSS(t *testing.T) {
+	svc := newResourceTestService(t)
+	seedSystemOSSStorageTarget(t, svc, storage.VideoStorageTargetOSS)
+
+	if _, err := svc.UploadResource("user-1", videoUploadHeader(t, mediaTestMP4()), "video", 0, 0, 0); err == nil {
+		t.Fatal("UploadResource() error = nil, want OSS upload failure")
+	}
+}
+
+// 图片保持原行为：批量视频参考图依赖对象存储的公网地址。
+func TestUploadImageStillUsesOSSWhenStorageTargetIsLocal(t *testing.T) {
+	svc := newResourceTestService(t)
+	seedSystemOSSStorageTarget(t, svc, storage.VideoStorageTargetLocal)
+
+	if _, err := svc.UploadResource("user-1", contentUploadHeader(t, mediaTestPNG(t)), "image", 0, 0, 0); err == nil {
+		t.Fatal("UploadResource() error = nil, want OSS upload attempt for images")
 	}
 }
 
