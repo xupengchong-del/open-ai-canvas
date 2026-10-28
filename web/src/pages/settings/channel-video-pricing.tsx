@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { App, Button, Segmented, Tag } from "antd";
-import { ChevronRight, FlaskConical, Settings2 } from "lucide-react";
+import { ChevronRight, FlaskConical, Settings2, Square } from "lucide-react";
 
 import { ModelEditorModal } from "@/components/model-editor-modal";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
@@ -17,6 +17,7 @@ type ModelCost = NonNullable<ModelChannel["modelCosts"]>[number];
 export function ChannelModelSettings({ channel, onChange }: { channel: ModelChannel; onChange: (costs: ModelCost[]) => void }) {
     const { message } = App.useApp();
     const [testingModel, setTestingModel] = useState("");
+    const testControllerRef = useRef<AbortController | null>(null);
     const [editorTab, setEditorTab] = useState("protocol");
     const [protocolLoading, setProtocolLoading] = useState(true);
     const [protocolError, setProtocolError] = useState("");
@@ -49,13 +50,20 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
     };
 
     const testModel = async (model: string, capability: ModelCost["capability"], protocol: ModelProtocol) => {
+        const controller = new AbortController();
+        testControllerRef.current = controller;
         setTestingModel(model);
         try {
-            const detail = await testChannelModelConnection(channel, model, capability, protocol);
+            const detail = await testChannelModelConnection(channel, model, capability, protocol, controller.signal);
             message.success(`模型测试通过：${detail}`);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "模型测试失败");
+            if (controller.signal.aborted) {
+                message.info("模型测试已中止");
+            } else {
+                message.error(error instanceof Error ? error.message : "模型测试失败");
+            }
         } finally {
+            if (testControllerRef.current === controller) testControllerRef.current = null;
             setTestingModel("");
         }
     };
@@ -118,14 +126,19 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
                     <div className="model-editor-footer">
                         <span className="text-xs text-foreground/50">更改实时保存到云端渠道配置</span>
                         <div className="model-editor-footer-actions">
-                            <Button
-                                icon={<FlaskConical className="size-4" />}
-                                loading={Boolean(testingModel)}
-                                disabled={!activeProtocol || protocolLoading || Boolean(protocolError)}
-                                onClick={() => { if (activeModel && activeProtocol) void testModel(activeModel, activeCapability, activeProtocol); }}
-                            >
-                                测试模型
-                            </Button>
+                            {testingModel ? (
+                                <Button danger icon={<Square className="size-4" />} onClick={() => testControllerRef.current?.abort()}>
+                                    中止测试
+                                </Button>
+                            ) : (
+                                <Button
+                                    icon={<FlaskConical className="size-4" />}
+                                    disabled={!activeProtocol || protocolLoading || Boolean(protocolError)}
+                                    onClick={() => { if (activeModel && activeProtocol) void testModel(activeModel, activeCapability, activeProtocol); }}
+                                >
+                                    测试模型
+                                </Button>
+                            )}
                             <Button type="primary" disabled={Boolean(testingModel)} onClick={() => setActiveModel(null)}>完成</Button>
                         </div>
                     </div>
