@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Alert, App, AutoComplete, Button, Form, Input, Segmented, Switch, Tabs } from "antd";
 import { useAdminContext } from "../admin-context";
 import { AdminModal } from "@/pages/admin/ui/overlays";
-import { FlaskConical, Plus } from "lucide-react";
+import { FlaskConical, Plus, Square } from "lucide-react";
 import { ModelIconPicker } from "@/components/model-logo";
 import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
@@ -50,6 +50,7 @@ export function ChannelModelEditor({
     const [configurationChanged, setConfigurationChanged] = useState(false);
     const busyRef = useRef(false);
     const dirtyRef = useRef(false);
+    const testControllerRef = useRef<AbortController | null>(null);
     const modelCapability = Form.useWatch("capability", form);
     const modelProtocol = Form.useWatch("protocol", form);
     const modelKey = Form.useWatch("modelKey", form) || "";
@@ -155,6 +156,8 @@ export function ChannelModelEditor({
         const upstreamModel = values.providerModelKey?.trim() || values.modelKey.trim();
         const capabilityConfig =
             values.capability === "text" || values.capability === "image" || values.capability === "video" ? normalizeModelCapabilityConfig(values.capabilityConfig || defaultModelCapabilityConfig(values.protocol, upstreamModel)) : undefined;
+        const controller = new AbortController();
+        testControllerRef.current = controller;
         busyRef.current = true;
         setTesting(true);
         try {
@@ -164,14 +167,23 @@ export function ChannelModelEditor({
                 capability: values.capability,
                 protocol: values.protocol,
                 capabilityConfig,
-            });
+            }, controller.signal);
             message.success(`模型测试通过，耗时 ${(result.durationMs / 1000).toFixed(2)} 秒`);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "模型测试失败");
+            if (controller.signal.aborted) {
+                message.info("模型测试已中止");
+            } else {
+                message.error(error instanceof Error ? error.message : "模型测试失败");
+            }
         } finally {
+            if (testControllerRef.current === controller) testControllerRef.current = null;
             busyRef.current = false;
             setTesting(false);
         }
+    };
+
+    const abortModelTest = () => {
+        testControllerRef.current?.abort();
     };
 
     return (
@@ -211,14 +223,19 @@ export function ChannelModelEditor({
                         </div>
                     </div>
                     <div className="admin-model-editor-footer-primary">
-                        <Button
-                            icon={<FlaskConical className="size-4" />}
-                            loading={testing}
-                            disabled={saving || protocolLoading || Boolean(protocolError)}
-                            onClick={() => modal.confirm({ title: "测试模型连接？", content: "测试会向上游发送真实请求，可能产生供应商费用；不会保存当前修改。", okText: "开始测试", cancelText: "取消", onOk: testModel })}
-                        >
-                            测试模型
-                        </Button>
+                        {testing ? (
+                            <Button danger icon={<Square className="size-4" />} onClick={abortModelTest}>
+                                中止测试
+                            </Button>
+                        ) : (
+                            <Button
+                                icon={<FlaskConical className="size-4" />}
+                                disabled={saving || protocolLoading || Boolean(protocolError)}
+                                onClick={() => modal.confirm({ title: "测试模型连接？", content: "测试会向上游发送真实请求，可能产生供应商费用；不会保存当前修改。", okText: "开始测试", cancelText: "取消", onOk: testModel })}
+                            >
+                                测试模型
+                            </Button>
+                        )}
                         <Button disabled={busy} onClick={requestClose}>
                             取消
                         </Button>

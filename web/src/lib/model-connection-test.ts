@@ -4,7 +4,7 @@ import { createVideoGenerationTask } from "@/services/api/video";
 import { defaultConfig, encodeChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import type { ModelProtocol } from "@/lib/model-protocols";
 
-export async function testChannelModelConnection(channel: ModelChannel, model: string, capability: ModelCapability, protocol: ModelProtocol) {
+export async function testChannelModelConnection(channel: ModelChannel, model: string, capability: ModelCapability, protocol: ModelProtocol, signal?: AbortSignal) {
     if (!channel.baseUrl.trim()) throw new Error("请先填写 Base URL");
     if (!channel.apiKey.trim()) throw new Error("请先填写 API Key");
     const selectedModel = encodeChannelModel(channel.id, model);
@@ -52,16 +52,16 @@ export async function testChannelModelConnection(channel: ModelChannel, model: s
 
     switch (capability) {
         case "text":
-            await requestImageQuestion(config, [{ role: "user", content: "Reply with OK." }], () => undefined);
+            await requestImageQuestion(config, [{ role: "user", content: "Reply with OK." }], () => undefined, { signal });
             return "文本响应正常";
         case "image":
-            await requestGeneration(config, "A simple gray circle on a white background.");
+            await requestGeneration(config, "A simple gray circle on a white background.", { signal });
             return "图片生成正常";
         case "audio":
-            await requestAudioGeneration(config, "Model test.");
+            await requestAudioGeneration(config, "Model test.", { signal });
             return "音频生成正常";
         case "video": {
-            const task = await createVideoGenerationTask(config, "A static gray circle on a white background.");
+            const task = await createVideoGenerationTask(config, "A static gray circle on a white background.", [], [], [], { signal });
             return `视频任务已创建（${task.id}）`;
         }
     }
