@@ -83,3 +83,6 @@ backend/tmp_*
 # Python 编译缓存（NAS 同步脚本会产生）
 __pycache__/
 *.pyc
+
+# 本地使用的说明书等 Office 文档，只留在工作目录，不进仓库。
+*.docx
