@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"yingce/backend/internal/model"
 )
@@ -67,7 +66,7 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 	}
 	useObjectURL := policy.requireURL || (policy.preferURL && resourceUsesObjectStorage(resource))
 	if useObjectURL {
-		signedURL, err := s.providerResourceURL(resource, time.Time{})
+		signedURL, err := s.providerVisibleResourceURL(userID, resource)
 		if err != nil {
 			return fmt.Errorf("生成参考素材地址失败：%w", err)
 		}

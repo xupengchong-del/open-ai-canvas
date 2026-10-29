@@ -803,7 +803,8 @@ func TestHydrateNewAPIChannel1ResourceUsesSignedLocalURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer server.Close()
 	svc := newResourceTestService(t)
-	settingJSON, _ := json.Marshal(ossSettingValue{Provider: "aliyun", PublicBaseURL: "https://127.0.0.1"})
+	// 平台地址公网可达时沿用签名地址；内网地址会派生对象存储副本（见 provider_input_copy_test.go）。
+	settingJSON, _ := json.Marshal(ossSettingValue{Provider: "aliyun", PublicBaseURL: "https://canvas.example.com"})
 	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: ossSettingKey, ValueJSON: string(settingJSON)}); err != nil {
 		t.Fatal(err)
 	}
@@ -815,7 +816,7 @@ func TestHydrateNewAPIChannel1ResourceUsesSignedLocalURL(t *testing.T) {
 	if err := svc.hydrateProviderMedia("user-1", &media, providerMediaHydrationPolicy{requireURL: true}); err != nil {
 		t.Fatalf("hydrateProviderMedia() error = %v", err)
 	}
-	if !strings.HasPrefix(media.URL, "https://127.0.0.1/api/public/resources/resource-local/file?") || !strings.Contains(media.URL, "signature=") || media.DataURL != "" {
+	if !strings.HasPrefix(media.URL, "https://canvas.example.com/api/public/resources/resource-local/file?") || !strings.Contains(media.URL, "signature=") || media.DataURL != "" {
 		t.Fatalf("media = %#v", media)
 	}
 	stored, err := svc.repo.Resource("resource-local")

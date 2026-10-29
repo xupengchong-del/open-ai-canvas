@@ -283,7 +283,16 @@ func resourceStorageIdentity(resource *model.Resource) string {
 	return strings.Join([]string{provider, resource.Endpoint, resource.Bucket, resource.ObjectKey}, "\x00")
 }
 
+// deleteStoredResourceObject 删除资源主对象；成功后再清理派生的公网副本。
 func (s *Service) deleteStoredResourceObject(userID string, resource *model.Resource) error {
+	if err := s.deleteStoredResourceObjectOnly(userID, resource); err != nil {
+		return err
+	}
+	s.deleteProviderInputVariants(userID, resource)
+	return nil
+}
+
+func (s *Service) deleteStoredResourceObjectOnly(userID string, resource *model.Resource) error {
 	if resource == nil {
 		return errors.New("资源记录为空")
 	}
