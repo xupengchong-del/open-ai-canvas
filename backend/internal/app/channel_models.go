@@ -105,11 +105,8 @@ func (s *Service) AdminChannelModels(actor *model.User, channelID string) ([]mod
 		return nil, err
 	}
 	for index := range items {
-		if strings.TrimSpace(items[index].CapabilityConfigJSON) == "" {
-			continue
-		}
 		config, decodeErr := DecodeModelCapabilityConfig(items[index].CapabilityConfigJSON)
-		if decodeErr != nil || config == nil {
+		if decodeErr != nil {
 			continue
 		}
 		normalized, normalizeErr := NormalizeModelCapabilityConfigForModel(items[index].Capability, string(items[index].Protocol), firstNonEmpty(items[index].ProviderModelKey, items[index].ModelKey), config, s.protocolRegistry())
@@ -191,7 +188,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	if conflict != nil && conflict.ID != strings.TrimSpace(id) {
 		return nil, BadAuthRequest("该渠道已存在模型 " + modelKey + "，请直接编辑已有模型")
 	}
-	if capability == "text" || capability == "image" || capability == "video" {
+	if capability == "text" || capability == "image" || capability == "video" || capability == "audio" {
 		validated, validateErr := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig, s.protocolRegistry())
 		if validateErr != nil {
 			return nil, validateErr
@@ -238,7 +235,7 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	item.Capability = capability
 	item.Protocol = protocol
 	s.applyChannelModelPriceTierSummary(item, tiers)
-	if capability == "text" || capability == "image" || capability == "video" {
+	if capability == "text" || capability == "image" || capability == "video" || capability == "audio" {
 		capabilityConfig, normalizeErr := NormalizeModelCapabilityConfigForModel(capability, string(protocol), providerModelKey, req.CapabilityConfig, s.protocolRegistry())
 		if normalizeErr != nil {
 			return nil, normalizeErr

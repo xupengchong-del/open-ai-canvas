@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"yingce/backend/internal/model"
@@ -13,10 +14,17 @@ import (
 // ModelCapabilityConfig 是模型能力声明，不包含供应商字段名；协议适配器负责把统一参数映射到上游请求。
 type ModelCapabilityConfig struct {
 	Version int                    `json:"version"`
-	Text    *TextCapabilityConfig  `json:"text,omitempty"`
-	Image   *ImageCapabilityConfig `json:"image,omitempty"`
-	Video   *VideoCapabilityConfig `json:"video,omitempty"`
+	// Priority 是所有能力的通用调用优先级：数值越大越优先，自动选择与批量调度按它降序。
+	Priority int                    `json:"priority"`
+	Text     *TextCapabilityConfig  `json:"text,omitempty"`
+	Image    *ImageCapabilityConfig `json:"image,omitempty"`
+	Video    *VideoCapabilityConfig `json:"video,omitempty"`
 }
+
+const (
+	DefaultModelPriority = 50
+	maxModelPriority     = 10000
+)
 
 type TextCapabilityConfig struct {
 	// Streaming controls whether this model accepts upstream SSE text responses.
@@ -117,6 +125,8 @@ type VideoCapabilityConfig struct {
 type VideoBatchGenerationConfig struct {
 	Enabled  bool `json:"enabled"`
 	MaxItems int  `json:"maxItems"`
+	// Priority 决定批量视频的调用顺序：数值越大越先调用，失败切换也按它排序。
+	Priority int `json:"priority"`
 }
 
 const (
@@ -188,6 +198,60 @@ func DecodeModelCapabilityConfig(raw string) (*ModelCapabilityConfig, error) {
 	return &value, nil
 }
 
+// effectiveModelPriority 读取能力配置的有效优先级；兼容只写过视频批量优先级的旧配置。
+func effectiveModelPriority(config *ModelCapabilityConfig) int {
+	if config == nil {
+		return DefaultModelPriority
+	}
+	if config.Priority > 0 {
+		return config.Priority
+	}
+	if config.Video != nil && config.Video.BatchGeneration.Priority > 0 {
+		return config.Video.BatchGeneration.Priority
+	}
+	return DefaultModelPriority
+}
+
+func normalizeModelPriority(input *ModelCapabilityConfig) (int, error) {
+	priority := 0
+	if input != nil {
+		priority = input.Priority
+		if priority <= 0 && input.Video != nil {
+			priority = input.Video.BatchGeneration.Priority
+		}
+	}
+	if priority <= 0 {
+		return DefaultModelPriority, nil
+	}
+	if priority > maxModelPriority {
+		return 0, BadAuthRequest("模型调用优先级必须在 1-10000 之间")
+	}
+	return priority, nil
+}
+
+// channelModelPriority 从持久化记录读取优先级；损坏 JSON 不阻断目录展示或调度。
+func channelModelPriority(channelModel *model.ChannelModel) int {
+	if channelModel == nil {
+		return DefaultModelPriority
+	}
+	config, err := DecodeModelCapabilityConfig(channelModel.CapabilityConfigJSON)
+	if err != nil {
+		return DefaultModelPriority
+	}
+	return effectiveModelPriority(config)
+}
+
+// sortChannelModelsByPriority 按通用优先级降序排列；同优先级保持原有展示顺序。
+func sortChannelModelsByPriority(items []model.ChannelModel) {
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := channelModelPriority(&items[i]), channelModelPriority(&items[j])
+		if left != right {
+			return left > right
+		}
+		return items[i].SortOrder < items[j].SortOrder
+	})
+}
+
 // normalizedChannelModelCapability 从持久化记录恢复渠道模型的权威能力合同。
 // 目录读取可以选择隔离损坏记录；任务创建等写路径必须把错误向上返回并失败关闭。
 func normalizedChannelModelCapability(channelModel *model.ChannelModel, registries ...*protocolcontract.Registry) (*ModelCapabilityConfig, error) {
@@ -195,10 +259,7 @@ func normalizedChannelModelCapability(channelModel *model.ChannelModel, registri
 		return nil, errors.New("渠道模型为空")
 	}
 	capability := normalizeCapability(channelModel.Capability)
-	if capability == "audio" {
-		return nil, nil
-	}
-	if capability != "text" && capability != "image" && capability != "video" {
+	if capability != "text" && capability != "image" && capability != "video" && capability != "audio" {
 		return nil, fmt.Errorf("不支持的渠道模型能力：%s", channelModel.Capability)
 	}
 	config, err := DecodeModelCapabilityConfig(channelModel.CapabilityConfigJSON)
@@ -217,8 +278,16 @@ func NormalizeModelCapabilityConfig(capability string, protocol string, input *M
 }
 
 func NormalizeModelCapabilityConfigForModel(capability string, protocol string, modelName string, input *ModelCapabilityConfig, registries ...*protocolcontract.Registry) (*ModelCapabilityConfig, error) {
-	if capability != "text" && capability != "image" && capability != "video" {
+	if capability != "text" && capability != "image" && capability != "video" && capability != "audio" {
 		return nil, nil
+	}
+	priority, err := normalizeModelPriority(input)
+	if err != nil {
+		return nil, err
+	}
+	// 音频模型没有能力参数，但同样需要持久化通用调用优先级。
+	if capability == "audio" {
+		return &ModelCapabilityConfig{Version: 1, Priority: priority}, nil
 	}
 	if capability == "text" {
 		if input == nil || input.Text == nil {
@@ -235,7 +304,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if text.MaxOutputTokens == 0 {
 			text.MaxOutputTokens = 16384
 		}
-		value := &ModelCapabilityConfig{Version: 1, Text: &text}
+		value := &ModelCapabilityConfig{Version: 1, Priority: priority, Text: &text}
 		if err := validateTextCapabilityConfig(value.Text); err != nil {
 			return nil, err
 		}
@@ -266,7 +335,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if input.Image.Parameters == nil {
 			fillMissingImageSizePresets(input.Image, protocol)
 		}
-		value := &ModelCapabilityConfig{Version: 1, Image: input.Image}
+		value := &ModelCapabilityConfig{Version: 1, Priority: priority, Image: input.Image}
 		if err := validateImageCapabilityConfig(value.Image); err != nil {
 			return nil, err
 		}
@@ -282,6 +351,8 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 	if video.BatchGeneration.MaxItems > 1000 {
 		video.BatchGeneration.MaxItems = 1000
 	}
+	// 批量优先级是通用优先级的历史字段；保存时保持同步，旧读者仍能读到同一个值。
+	video.BatchGeneration.Priority = priority
 	if strings.TrimSpace(protocol) == "autodl-comfyui" {
 		var err error
 		video, err = normalizeAutoDLVideoScreenSpec(video, modelName)
@@ -289,7 +360,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 			return nil, err
 		}
 	}
-	value := &ModelCapabilityConfig{Version: 1, Video: video}
+	value := &ModelCapabilityConfig{Version: 1, Priority: priority, Video: video}
 	if err := validateVideoCapabilityConfig(value.Video); err != nil {
 		return nil, err
 	}

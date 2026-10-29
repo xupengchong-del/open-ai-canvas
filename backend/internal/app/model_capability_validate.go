@@ -196,6 +196,9 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if value.BatchGeneration.MaxItems < 0 || value.BatchGeneration.MaxItems > 1000 {
 		return BadAuthRequest("批量视频单批最多条数必须在 0-1000 之间")
 	}
+	if value.BatchGeneration.Priority <= 0 || value.BatchGeneration.Priority > 10000 {
+		return BadAuthRequest("批量视频模型优先级必须在 1-10000 之间")
+	}
 	return validateVideoProcessingConfig(value.Processing)
 }
 

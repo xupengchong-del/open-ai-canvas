@@ -147,6 +147,13 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	for _, reference := range batchVideoReferences {
 		snapshot.Direct = append(snapshot.Direct, ResourceDirectReference{Kind: "批量视频参考素材", ID: reference.ID, Title: reference.Title, ResourceID: reference.ResourceID})
 	}
+	var materialBatches []model.BatchVideoMaterialBatch
+	if err := r.db.Where("user_id = ?", userID).Find(&materialBatches).Error; err != nil {
+		return snapshot, err
+	}
+	for _, batch := range materialBatches {
+		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "批量视频素材批次", ID: batch.ID, Title: batch.Label, PrimaryJSON: batch.MaterialJSON})
+	}
 
 	var toolRecords []model.Tool
 	if err := r.db.Where("owner_id = ?", userID).Find(&toolRecords).Error; err != nil {
@@ -198,20 +205,8 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "画布", ID: canvas.ID, Title: canvas.Title, PrimaryJSON: canvas.PayloadJSON})
 	}
 
-	var tasks []model.Task
-	taskQuery := r.db.Select("id", "prompt", "status", "input_json", "result_json").Where("user_id = ?", userID)
-	if len(resourceIDs) <= 100 {
-		var conditions []string
-		var args []interface{}
-		for _, rid := range resourceIDs {
-			conditions = append(conditions, "input_json LIKE ? OR result_json LIKE ?")
-			args = append(args, "%"+rid+"%", "%"+rid+"%")
-		}
-		if len(conditions) > 0 {
-			taskQuery = taskQuery.Where(strings.Join(conditions, " OR "), args...)
-		}
-	}
-	if err := taskQuery.Find(&tasks).Error; err != nil {
+	tasks, err := r.referenceTasks(userID, resourceIDs)
+	if err != nil {
 		return snapshot, err
 	}
 	taskStatuses := make(map[string]model.TaskStatus, len(tasks))
@@ -235,20 +230,8 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "创作执行项", ID: submission.ID, Title: submission.ItemKey, PrimaryJSON: submission.RequestJSON})
 	}
 
-	var taskLogs []model.TaskLog
-	taskLogQuery := r.db.Select("id", "task_id", "message", "payload").Where("user_id = ?", userID)
-	if len(resourceIDs) <= 100 {
-		var conditions []string
-		var args []interface{}
-		for _, rid := range resourceIDs {
-			conditions = append(conditions, "payload LIKE ?")
-			args = append(args, "%"+rid+"%")
-		}
-		if len(conditions) > 0 {
-			taskLogQuery = taskLogQuery.Where(strings.Join(conditions, " OR "), args...)
-		}
-	}
-	if err := taskLogQuery.Find(&taskLogs).Error; err != nil {
+	taskLogs, err := r.referenceTaskLogs(userID, resourceIDs)
+	if err != nil {
 		return snapshot, err
 	}
 	for _, taskLog := range taskLogs {
@@ -406,6 +389,74 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		snapshot.Direct = append(snapshot.Direct, ResourceDirectReference{Kind: "公告草稿", ID: draft.ResourceID, ResourceID: draft.ResourceID})
 	}
 	return snapshot, nil
+}
+
+const resourceReferenceQueryChunk = 100
+
+// referenceTasks 按资源分块查询任务，避免资源数超过 100 时退化为全量任务扫描。
+func (r *Repository) referenceTasks(userID string, resourceIDs []string) ([]model.Task, error) {
+	found := map[string]model.Task{}
+	for start := 0; start < len(resourceIDs); start += resourceReferenceQueryChunk {
+		end := start + resourceReferenceQueryChunk
+		if end > len(resourceIDs) {
+			end = len(resourceIDs)
+		}
+		conditions := make([]string, 0, end-start)
+		args := make([]interface{}, 0, (end-start)*2)
+		for _, resourceID := range resourceIDs[start:end] {
+			conditions = append(conditions, "input_json LIKE ? OR result_json LIKE ?")
+			args = append(args, "%"+resourceID+"%", "%"+resourceID+"%")
+		}
+		var tasks []model.Task
+		if err := r.db.Select("id", "prompt", "status", "input_json", "result_json").
+			Where("user_id = ?", userID).
+			Where(strings.Join(conditions, " OR "), args...).
+			Find(&tasks).Error; err != nil {
+			return nil, err
+		}
+		for _, task := range tasks {
+			found[task.ID] = task
+		}
+	}
+	tasks := make([]model.Task, 0, len(found))
+	for _, task := range found {
+		tasks = append(tasks, task)
+	}
+	slices.SortFunc(tasks, func(left, right model.Task) int { return strings.Compare(left.ID, right.ID) })
+	return tasks, nil
+}
+
+// referenceTaskLogs 与 referenceTasks 使用同样的分块策略，避免大项目删除时读全量日志。
+func (r *Repository) referenceTaskLogs(userID string, resourceIDs []string) ([]model.TaskLog, error) {
+	found := map[string]model.TaskLog{}
+	for start := 0; start < len(resourceIDs); start += resourceReferenceQueryChunk {
+		end := start + resourceReferenceQueryChunk
+		if end > len(resourceIDs) {
+			end = len(resourceIDs)
+		}
+		conditions := make([]string, 0, end-start)
+		args := make([]interface{}, 0, end-start)
+		for _, resourceID := range resourceIDs[start:end] {
+			conditions = append(conditions, "payload LIKE ?")
+			args = append(args, "%"+resourceID+"%")
+		}
+		var logs []model.TaskLog
+		if err := r.db.Select("id", "task_id", "message", "payload").
+			Where("user_id = ?", userID).
+			Where(strings.Join(conditions, " OR "), args...).
+			Find(&logs).Error; err != nil {
+			return nil, err
+		}
+		for _, log := range logs {
+			found[log.ID] = log
+		}
+	}
+	logs := make([]model.TaskLog, 0, len(found))
+	for _, log := range found {
+		logs = append(logs, log)
+	}
+	slices.SortFunc(logs, func(left, right model.TaskLog) int { return strings.Compare(left.ID, right.ID) })
+	return logs, nil
 }
 
 func (r *Repository) AssetBusinessReferences(userID string, assetID string) ([]ResourceDirectReference, error) {

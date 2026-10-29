@@ -10,6 +10,7 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { appQueryClient } from "@/lib/query-client";
 import { parseAssetRecordList } from "@/lib/asset-record";
+import { normalizeGeneratedAssetTitles } from "@/lib/asset-naming";
 import { rebaseAssetSnapshot } from "@/lib/asset-storage-revision";
 import { assetForRemoteSync } from "@/lib/asset-remote-sync";
 import type { Asset } from "@/stores/use-asset-store";
@@ -501,6 +502,44 @@ export async function loadAssetLibraryPage(options: Parameters<typeof listRemote
     return { ...result, assets: parseAssetRecordList(result.assets) };
 }
 
+/**
+ * 素材写入后只就地更新已加载的分页数据。重新请求列表会让卡片按更新时间重排，
+ * 用户正对着列表操作时会突然换位；导出计数、改名等都不需要换顺序。
+ */
+export function patchCachedAssetLists(assets: readonly Asset[]) {
+    const latest = new Map(assets.map((asset) => [asset.id, asset]));
+    if (!latest.size) return;
+    for (const queryKey of [["asset-library"], ["asset-picker"]] as const) {
+        appQueryClient.setQueriesData({ queryKey }, (data) => patchAssetPageData(data, latest));
+    }
+}
+
+function patchAssetPageData(data: unknown, latest: Map<string, Asset>): unknown {
+    if (!data || typeof data !== "object") return data;
+    const page = data as Record<string, unknown>;
+    if (Array.isArray(page.assets)) {
+        let changed = false;
+        const assets = page.assets.map((item) => {
+            const id = item && typeof item === "object" ? (item as { id?: string }).id : undefined;
+            const asset = id ? latest.get(id) : undefined;
+            if (!asset) return item;
+            changed = true;
+            return { ...(item as Asset), ...asset, metadata: { ...(item as Asset).metadata, ...asset.metadata } };
+        });
+        return changed ? { ...page, assets } : data;
+    }
+    if (Array.isArray(page.pages)) {
+        let changed = false;
+        const pages = page.pages.map((item) => {
+            const next = patchAssetPageData(item, latest);
+            if (next !== item) changed = true;
+            return next;
+        });
+        return changed ? { ...page, pages } : data;
+    }
+    return data;
+}
+
 function acceptRemoteAssets(remoteAssets: Asset[], refresh = false) {
     const assets = parseAssetRecordList(remoteAssets);
     const current = new Map(useAssetStore.getState().assets.map((asset) => [asset.id, asset]));
@@ -662,7 +701,8 @@ export async function syncRemoteUserData(userId?: string | null) {
                 ...pendingProjects.filter((project) => !remoteDeletedProjects.has(project.id)),
             ];
             const remoteAssets = parseAssetRecordList(snapshot.assets);
-            const assets = mergeRemoteAssetsWithLocalPending(remoteAssets, localAssets);
+            // 历史生成素材标题统一为「生成视频」等固定文案，同步时按创建日期重新编号。
+            const assets = normalizeGeneratedAssetTitles(mergeRemoteAssetsWithLocalPending(remoteAssets, localAssets));
             ensureSession();
             if (useCanvasStore.getState().projects !== localProjects) throw new CanvasSyncPendingError("当前编辑已保留，后台重新对齐云端");
             useCanvasStore.getState().replaceProjects(projects);
@@ -1435,6 +1475,11 @@ async function syncRemoteAssetBatch(dirtyAssets: Asset[], uploaded: Map<string, 
         requireCurrentSession();
         acknowledgedAssets.set(source.id, source);
         verifiedAssets.add(source.id);
+    }
+    // 素材上传成功后只补丁已加载的列表数据；重新请求会让素材库按更新时间重排，
+    // 也会让正在浏览的页面闪烁。列表在下次进入时再按服务端顺序重新加载。
+    if (dirtyAssets.length) {
+        patchCachedAssetLists(dirtyAssets.map((asset) => useAssetStore.getState().assets.find((item) => item.id === asset.id) ?? asset));
     }
 }
 

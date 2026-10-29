@@ -1,4 +1,4 @@
-import { App, Button, InputNumber } from "antd";
+import { App, Button, InputNumber, Switch } from "antd";
 import { SettingsRow } from "@/components/ui/product/settings-row";
 import { ArrowLeft, Boxes, Brain, Bug, Inbox, MessageSquareText, RadioTower, SlidersHorizontal, UserRound, Workflow } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { refreshSystemChannels } from "@/lib/user-session";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import { ChannelSettingsPane, channelValidationError, focusInvalidChannelField, isChannelReady } from "./channel-settings-pane";
 import { ModelDefaultGrid } from "./model-default-grid";
 import { PromptPreferencesPane } from "./prompt-preferences-pane";
@@ -52,6 +53,8 @@ export default function SettingsPage() {
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const shouldPromptContinue = searchParams.get("continue") === "1";
     const userId = useUserStore((state) => state.user?.id);
+    const agentLauncherEnabled = useGlobalAgentStore((state) => state.launcherEnabled);
+    const setAgentLauncherEnabled = useGlobalAgentStore((state) => state.setLauncherEnabled);
     const userChannels = config.channels.filter((channel) => channel.scope !== "system");
     const visibleConfigSections = useMemo(() => (customChannelsEnabled ? configSections : configSections.filter((section) => section.key !== "channels"))
         .filter((section) => section.key !== "runninghub" || runningHubPluginEnabled), [customChannelsEnabled, runningHubPluginEnabled]);
@@ -147,6 +150,17 @@ export default function SettingsPage() {
                                 />
                             }
                             controlClassName="w-[200px]"
+                        />
+                    </section>
+                    <section className="settings-preference-block">
+                        <div className="settings-preference-heading">
+                            <h3>Agent 助手</h3>
+                            <p>右下角的助手悬浮入口；关闭后不再加载助手形象和事件流，画布与创作页里的 Agent 按钮仍可正常使用。</p>
+                        </div>
+                        <SettingsRow
+                            label="显示 Agent 悬浮入口"
+                            description="默认关闭。需要常驻入口时打开；关闭后按 Esc 或“收起”收起面板不会再显示悬浮形象。"
+                            control={<Switch checked={agentLauncherEnabled} onChange={setAgentLauncherEnabled} aria-label="显示 Agent 悬浮入口" />}
                         />
                     </section>
                 </div>

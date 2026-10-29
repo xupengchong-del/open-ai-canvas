@@ -4,8 +4,6 @@ export type BatchVideoProjectSettings = {
     durationSeconds: number;
     aspectRatio: string;
     standardCreativeCount: number;
-    planningChannelModelId?: string;
-    referenceModelId?: string;
     templates?: string[];
 };
 
@@ -23,6 +21,8 @@ export type BatchVideoProject = {
     analysisTaskId?: string;
     analysisStatus?: string;
     analysisError?: string;
+    analysisCurrentAssetId?: string;
+    scheduledStartAt?: string | null;
     massUnlockedAt?: string | null;
     createdAt: string;
     updatedAt: string;
@@ -76,6 +76,11 @@ export type BatchVideoReferenceAsset = {
     source: string;
     status: string;
     version: number;
+    analysisStatus?: string;
+    analysisTaskId?: string;
+    analysisError?: string;
+    analysisResultJson?: string;
+    analyzedAt?: string | null;
     usageCount: number;
 };
 
@@ -127,12 +132,15 @@ export type BatchVideoGenerationJob = {
     channelModelId: string;
     mode: string;
     status: string;
+    modelPriority: number;
     currentTaskId: string;
     attemptsUsed: number;
     failoverCount: number;
     retryRound: number;
     successResourceId: string;
     lastError: string;
+    progress: number;
+    stage: string;
     createdAt: string;
     updatedAt: string;
 };
@@ -178,10 +186,12 @@ export type BatchVideoProjectCounts = {
     pendingReview: number;
     rejected: number;
     jobsTotal: number;
+    submitted: number;
     waiting: number;
     running: number;
     succeeded: number;
     failed: number;
+    cancelled: number;
     attempts: number;
     retrySucceeded: number;
     retryFailed: number;
@@ -213,9 +223,27 @@ export type BatchVideoValidationState = {
     };
 };
 
+export type BatchVideoAnalysisTask = {
+    id: string;
+    status: string;
+    stage: string;
+    progress: number;
+    error: string;
+    assetId?: string;
+    assetTitle?: string;
+    total: number;
+    done: number;
+    failed: number;
+    running: number;
+    createdAt: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+};
+
 export type BatchVideoProjectDetail = {
     project: BatchVideoProject;
     settings: BatchVideoProjectSettings;
+    analysisTask?: BatchVideoAnalysisTask;
     materialBatches: BatchVideoMaterialBatch[];
     sellingPoints: BatchVideoSellingPoint[];
     referenceAssets: BatchVideoReferenceAsset[];
@@ -245,6 +273,7 @@ export type BatchVideoAdminSettings = {
     maxAttemptsPerModel: number;
     defaultSubmissionMode: "single" | "multi";
     samplingRate: number;
+    analysisConcurrency: number;
 };
 
 export type BatchVideoModelOption = {
@@ -253,45 +282,39 @@ export type BatchVideoModelOption = {
     model: string;
     displayName: string;
     maxItems: number;
-    sortOrder: number;
-};
-
-export type BatchVideoReferenceModelOption = {
-    channelModelId: string;
-    channelId: string;
-    model: string;
-    displayName: string;
-    sortOrder: number;
-};
-
-export type BatchVideoPlanningModelOption = {
-    channelModelId: string;
-    channelId: string;
-    model: string;
-    displayName: string;
-    maxImages: number;
+    priority: number;
     sortOrder: number;
 };
 
 export type CreateBatchVideoProjectInput = {
     name: string;
-    productName: string;
-    settings: BatchVideoProjectSettings;
-    materials: BatchVideoMaterialInput[];
-    documents: BatchVideoDocumentInput[];
-    sellingPoints: { text: string; evidence?: string; source?: string }[];
+    productName?: string;
+    settings?: BatchVideoProjectSettings;
+    materials?: BatchVideoMaterialInput[];
+    documents?: BatchVideoDocumentInput[];
+    sellingPoints?: { text: string; evidence?: string; source?: string }[];
 };
 
 export const batchVideoApi = {
     listProjects: (page = 1, pageSize = 20, stage = "") => http.get<BatchVideoProjectSummary[]>("/batch-video/projects", { params: { page, pageSize, stage: stage || undefined } }),
     createProject: (input: CreateBatchVideoProjectInput) => http.post<BatchVideoProjectDetail>("/batch-video/projects", input),
     getProject: (id: string) => http.get<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}`),
+    deleteProject: (id: string) => http.delete<{ deleted: boolean }>(`/batch-video/projects/${encodeURIComponent(id)}`),
     updateSettings: (id: string, settings: BatchVideoProjectSettings) => http.patch<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/settings`, settings),
     addMaterialBatch: (id: string, payload: { label: string; materials: BatchVideoMaterialInput[]; documents: BatchVideoDocumentInput[] }) =>
         http.post<BatchVideoMaterialBatch>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches`, payload),
-    analyze: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/analyze`, {}),
+    deleteMaterialBatch: (id: string, batchId: string) =>
+        http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches/${encodeURIComponent(batchId)}`),
+    deleteMaterial: (id: string, batchId: string, resourceId: string) =>
+        http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches/${encodeURIComponent(batchId)}/materials/${encodeURIComponent(resourceId)}`),
+    clearMaterials: (id: string) =>
+        http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches`),
+    analyze: (id: string, scope: "pending" | "all" = "pending") => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/analyze`, { scope }),
+    continueAnalysis: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/analysis/continue`, {}),
+    cancelAnalysis: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/analysis/cancel`, {}),
+    cancelPlanning: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/planning/cancel`, {}),
     generateCreatives: (id: string, payload: { count: number; mode?: string; templates?: string[] }) =>
-        http.post<{ round: BatchVideoCreativeRound; rounds: number; created: number; mode: string; matchCount: number }>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/generate`, payload),
+        http.post<{ round: BatchVideoCreativeRound; rounds: number; roundIds: string[]; created: number; mode: string; matchCount: number }>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/generate`, payload),
     listCreatives: (id: string, params: { page?: number; pageSize?: number; roundId?: string; reviewStatus?: string; matchStatus?: string } = {}) =>
         http.get<{ creatives: BatchVideoCreative[]; total: number }>(`/batch-video/projects/${encodeURIComponent(id)}/creatives`, { params }),
     updateCreative: (id: string, creativeId: string, payload: Pick<BatchVideoCreative, "title" | "hook" | "copywriting" | "videoPrompt" | "imagePrompt">) =>
@@ -309,8 +332,12 @@ export const batchVideoApi = {
     unlockMass: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/unlock-mass`, {}),
     preflight: (id: string, payload: BatchVideoSubmissionInput) =>
         http.post<BatchVideoSubmissionPreflight>(`/batch-video/projects/${encodeURIComponent(id)}/preflight`, payload),
+    discardUploads: (resourceIds: string[]) =>
+        http.post<{ discarded: number }>("/batch-video/uploads/discard", { resourceIds }),
     submit: (id: string, payload: BatchVideoSubmissionInput) =>
         http.post<{ jobs: number }>(`/batch-video/projects/${encodeURIComponent(id)}/submit`, payload),
+    start: (id: string, scheduledAt?: string) =>
+        http.post<{ jobs: number }>(`/batch-video/projects/${encodeURIComponent(id)}/start`, scheduledAt ? { scheduledAt } : {}),
     listJobs: (id: string, params: { page?: number; pageSize?: number; status?: string } = {}) =>
         http.get<BatchVideoGenerationJob[]>(`/batch-video/projects/${encodeURIComponent(id)}/jobs`, { params }),
     listAttempts: (id: string, jobId: string) =>
@@ -323,8 +350,6 @@ export const batchVideoApi = {
     stats: (id: string) => http.get<BatchVideoProjectCounts>(`/batch-video/projects/${encodeURIComponent(id)}/stats`),
     settings: () => http.get<BatchVideoAdminSettings>("/batch-video/settings"),
     listModels: () => http.get<BatchVideoModelOption[]>("/batch-video/models"),
-    listPlanningModels: () => http.get<BatchVideoPlanningModelOption[]>("/batch-video/planning-models"),
-    listReferenceModels: () => http.get<BatchVideoReferenceModelOption[]>("/batch-video/reference-models"),
     generateReference: (id: string, creativeId: string) =>
         http.post<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}/generate-reference`, {}),
     adminSettings: () => http.get<BatchVideoAdminSettings>("/admin/batch-video/settings"),
@@ -350,8 +375,6 @@ export function parseBatchVideoSettings(project: BatchVideoProject): BatchVideoP
             durationSeconds: value.durationSeconds || 8,
             aspectRatio: value.aspectRatio || "9:16",
             standardCreativeCount: value.standardCreativeCount || 10,
-            planningChannelModelId: value.planningChannelModelId || "",
-            referenceModelId: value.referenceModelId || "",
             templates: value.templates,
         };
     } catch {

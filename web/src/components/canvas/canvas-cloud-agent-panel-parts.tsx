@@ -15,7 +15,7 @@ import { Live2DAvatar } from "./live2d-avatar";
 import { agentAvatarBundleFileURL, live2DModelURL } from "@/services/api/appearance";
 import { AgentAvatarVideo } from "@/components/canvas/agent-avatar-video";
 import { FluidOrb } from "@/components/ui/fluid-orb";
-import { ArrowLeft, Check, CircleDot, Clock3, Download, History, LoaderCircle, MessageSquarePlus, RotateCcw, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, CircleDot, Clock3, Download, History, LoaderCircle, MessageSquarePlus, RotateCcw, Settings2, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { Button, Input, Popover } from "antd";
 import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
 import type { AgentContextPhase, AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
@@ -207,7 +207,10 @@ export function AgentHeader({
                 <Button type="text" shape="circle" icon={<MessageSquarePlus className="size-4" />} onClick={onNew} aria-label="新建对话" title="新建对话" />
                 <Button type="text" shape="circle" icon={<History className="size-4" />} onClick={onHistory} aria-label="历史对话" title="历史对话" />
                 <Button type="text" shape="circle" icon={<Settings2 className="size-4" />} onClick={onSettings} aria-label="Agent 设置" title="Agent 设置" />
-                <Button type="text" shape="circle" icon={<X className="size-4" />} onClick={onCollapse} aria-label="收起 Agent" title="收起" />
+                <button type="button" className="agent-panel-collapse" onClick={onCollapse} aria-label="收起画布助手" title="收起画布助手（Esc）">
+                    <ChevronDown className="size-4" aria-hidden />
+                    <span className="agent-panel-collapse-label">收起</span>
+                </button>
             </div>
         </header>
     );

@@ -5,6 +5,7 @@
 import { Dropdown, type MenuProps } from "antd";
 import type { MouseEvent } from "react";
 import { AlertTriangle, AudioLines, Box, Copy, Download, FileText, FolderOpen, MoreHorizontal, PencilLine, Play, RotateCcw, Trash2 } from "lucide-react";
+import { assetExportCount } from "@/lib/asset-export-count";
 import { AssetLibraryCard, AssetLibraryCardMedia } from "@/components/assets/asset-library-card";
 import { type AssetKind } from "@/stores/use-asset-store";
 import { AssetMediaPreview } from "@/components/asset-media-preview";
@@ -38,6 +39,7 @@ export function formatExpirationDate(updatedAt: string, retentionDays: number) {
 export function AssetCard({
     asset,
     selected,
+    justExported = false,
     isTrash = false,
     retentionDays = 30,
     selectionMode = false,
@@ -54,6 +56,8 @@ export function AssetCard({
 }: {
     asset: LibraryAsset;
     selected: boolean;
+    /** 本次页面会话内刚导出过：取消选中后仍用绿框提示，避免重复导出。 */
+    justExported?: boolean;
     isTrash?: boolean;
     retentionDays?: number;
     selectionMode?: boolean;
@@ -88,7 +92,7 @@ export function AssetCard({
         onOpen();
     };
     return (
-        <AssetLibraryCard selected={selected}>
+        <AssetLibraryCard selected={selected} className={justExported ? "is-just-exported" : undefined}>
             <AssetCover asset={asset} selected={selected} isTrash={isTrash} onSelect={onSelect} onOpen={handleCardClick} menuItems={menuItems} />
             <button type="button" className="asset-collection-body block w-full px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--workspace-accent)]" onClick={handleCardClick}>
                 <div className="flex min-w-0 items-center justify-between gap-2">
@@ -142,6 +146,7 @@ export function AssetCover({
     const showPlay = asset.kind === "video";
     const isLight = asset.kind === "audio" || asset.kind === "text" || asset.kind === "model";
     const storageKey = "data" in asset && asset.data && "storageKey" in asset.data ? (asset.data.storageKey as string | undefined) : undefined;
+    const exportCount = assetExportCount(asset);
     const storageLoc = resourceStorageLocation(storageKey);
     return (
         <AssetLibraryCardMedia className={isLight ? "assets-cover is-light" : "assets-cover"}>
@@ -194,6 +199,12 @@ export function AssetCover({
                 {asset.portraitCertified ? <span className="assets-cover-badge is-category">人像认证</span> : null}
             </span>
             {clock ? <span className="assets-cover-clock">{clock}</span> : null}
+            {exportCount > 0 ? (
+                <span className="assets-cover-export" title={`已导出 ${exportCount} 次`}>
+                    <Download />
+                    已导出 {exportCount}
+                </span>
+            ) : null}
             {asset.kind === "audio" && !isTrash ? <AudioPlayButton asset={asset} className="absolute bottom-2 left-2" /> : null}
             <input
                 type="checkbox"

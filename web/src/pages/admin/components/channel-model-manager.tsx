@@ -6,6 +6,7 @@ import { CircleDollarSign, Copy, Pencil, Plus, RefreshCw, Search, Trash2 } from 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
 import { ModelIcon, ModelRecentHealthTrack } from "@/components/model-picker";
 import { modelProtocolDefinition, modelProtocolLabel, type ModelProtocol } from "@/lib/model-protocols";
+import { modelPriorityOf } from "@/lib/model-capabilities";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
 import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, syncAdminChannelModelUpstreamPrices, type ChannelModel } from "@/services/api/wallet";
 import { useConfigStore, type ModelChannel } from "@/stores/use-config-store";
@@ -225,6 +226,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                             {item.displayName || item.modelKey}
                         </div>
                         <div className="admin-monospace truncate text-xs text-foreground/45">{item.modelKey}</div>
+                        <div className="truncate text-xs text-foreground/55">调用优先级 {modelPriorityOf(item.capabilityConfig)}</div>
                         {item.channelLabel ? <div className="truncate text-xs text-foreground/60">渠道展示名：{item.channelLabel}</div> : null}
                         {item.providerModelKey && item.providerModelKey !== item.modelKey ? <div className="admin-monospace truncate text-xs text-foreground/35">上游：{item.providerModelKey}</div> : null}
                     </div>

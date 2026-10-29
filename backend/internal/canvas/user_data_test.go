@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"yingce/backend/internal/model"
 )
@@ -202,5 +203,76 @@ func TestCanvasMediaAssetReferencesCollectsNodesAndTimeline(t *testing.T) {
 	}
 	if references[1].AssetID != "asset-audio" || references[1].ResourceID != "resource-audio" {
 		t.Fatalf("timeline reference = %#v", references[1])
+	}
+}
+
+func TestIsExportCountOnlyRewrite(t *testing.T) {
+	base := `{"id":"asset-1","title":"20261029-001","metadata":{"source":"generation-task"},"data":{"url":"https://example.com/a.mp4"}}`
+	counted := `{"id":"asset-1","title":"20261029-001","metadata":{"source":"generation-task","exportCount":1},"data":{"url":"https://example.com/a.mp4"}}`
+	renamed := `{"id":"asset-1","title":"20261029-002","metadata":{"source":"generation-task","exportCount":1},"data":{"url":"https://example.com/a.mp4"}}`
+
+	if !isExportCountOnlyRewrite(base, counted) {
+		t.Fatal("adding exportCount should be treated as a counting-only rewrite")
+	}
+	if !isExportCountOnlyRewrite(counted, `{"id":"asset-1","title":"20261029-001","metadata":{"source":"generation-task","exportCount":2},"data":{"url":"https://example.com/a.mp4"}}`) {
+		t.Fatal("incrementing exportCount should be treated as a counting-only rewrite")
+	}
+	if isExportCountOnlyRewrite(counted, renamed) {
+		t.Fatal("title edits must keep the original update semantics")
+	}
+	if isExportCountOnlyRewrite(base, base) {
+		t.Fatal("identical payloads are not a rewrite")
+	}
+	bumped := `{"id":"asset-1","title":"20261029-001","metadata":{"source":"generation-task","exportCount":1},"data":{"url":"https://example.com/a.mp4"},"updatedAt":"2026-10-30T00:00:00Z"}`
+	sameContent := `{"id":"asset-1","title":"20261029-001","metadata":{"source":"generation-task","exportCount":1},"data":{"url":"https://example.com/a.mp4"},"updatedAt":"2026-10-29T06:00:00Z"}`
+	if !isExportCountOnlyRewrite(sameContent, bumped) {
+		t.Fatal("bookkeeping timestamps must not count as content changes")
+	}
+	if isExportCountOnlyRewrite("not-json", counted) {
+		t.Fatal("invalid payloads must not be treated as counting-only rewrites")
+	}
+}
+
+func TestUpsertUserAssetKeepsUpdatedAtForExportCount(t *testing.T) {
+	svc := newCanvasHistoryTestService(t)
+	build := func(updatedAt string, extra map[string]any) json.RawMessage {
+		payload := testUserAssetPayload("video", map[string]any{
+			"metadata":  map[string]any{"source": "generation-task"},
+			"createdAt": "2026-10-29T06:00:00Z",
+			"updatedAt": updatedAt,
+		})
+		for key, value := range extra {
+			payload[key] = value
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	if _, err := svc.UpsertUserAsset("user-1", build("2026-10-29T06:00:00Z", nil)); err != nil {
+		t.Fatal(err)
+	}
+	// 导出计数写入携带的本地时间可能比服务端新，但不能因此刷新素材的更新时间。
+	counted := build("2026-10-30T00:00:00Z", map[string]any{
+		"metadata": map[string]any{"source": "generation-task", "exportCount": 1},
+	})
+	summary, err := svc.UpsertUserAsset("user-1", counted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !summary.UpdatedAt.Equal(time.Date(2026, 10, 29, 6, 0, 0, 0, time.UTC)) {
+		t.Fatalf("export count write moved updatedAt to %s", summary.UpdatedAt)
+	}
+	renamed := build("2026-10-30T00:00:00Z", map[string]any{
+		"title":    "20261029-002",
+		"metadata": map[string]any{"source": "generation-task", "exportCount": 1},
+	})
+	summary, err = svc.UpsertUserAsset("user-1", renamed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !summary.UpdatedAt.Equal(time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("content edits must keep their own updatedAt, got %s", summary.UpdatedAt)
 	}
 }

@@ -20,6 +20,7 @@ import { appQueryClient } from "@/lib/query-client";
 import { hasRemoteUserDataSyncSession, loadAssetsForUse, saveRemoteUserDataNow, subscribeRemoteUserDataReady } from "@/services/user-data-sync";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { normalizeAssetCategory } from "@/lib/asset-category";
+import { generatedAssetTitle } from "@/lib/asset-naming";
 import { runGenerationConsumer } from "@/services/generation-consumer-lifecycle";
 import { useAssetStore, type AssetCategory, type AssetStatus, type NewAsset } from "@/stores/use-asset-store";
 import type { CanvasNodeData } from "@/types/canvas";
@@ -494,7 +495,7 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
         const stored = await storedGenerationImage(image, input.effectKey, scope, input.signal);
         return {
             kind: "image",
-            title: "生成图片",
+            title: generatedAssetTitle("image", useAssetStore.getState().assets),
             category: "material",
             coverUrl: stored.url,
             tags: ["生成"],
@@ -534,7 +535,7 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
         if (!stored.url) throw new Error("视频结果资源不可用");
         return {
             kind: "video",
-            title: "生成视频",
+            title: generatedAssetTitle("video", useAssetStore.getState().assets),
             category: "material",
             coverUrl: canvasVideoAssetPreviewUrl(stored.url),
             tags: ["生成"],
@@ -578,7 +579,7 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
     if (!stored.url) throw new Error("音频结果资源不可用");
     return {
         kind: "audio",
-        title: "生成音频",
+        title: generatedAssetTitle("audio", useAssetStore.getState().assets),
         category: "material",
         coverUrl: "",
         tags: ["生成"],

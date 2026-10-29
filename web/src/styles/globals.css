@@ -14512,6 +14512,30 @@ html:not(.dark) .creation-history-drawer-root {
     backdrop-filter: blur(6px);
     font-variant-numeric: tabular-nums;
 }
+/* 导出计数固定在右下角，和左下角的时长、右上角的更多按钮互不遮挡。 */
+.assets-cover-export {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    z-index: 2;
+    display: inline-flex;
+    height: 20px;
+    align-items: center;
+    gap: 4px;
+    padding: 0 7px;
+    border: 1px solid rgba(255, 255, 255, .24);
+    border-radius: 6px;
+    background: rgba(10, 10, 10, .62);
+    color: #fff;
+    font-size: var(--fs-micro);
+    font-weight: 560;
+    letter-spacing: .02em;
+    line-height: 1;
+    backdrop-filter: blur(6px);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+.assets-cover-export svg { width: 11px; height: 11px; }
 .assets-cover-play { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; color: #fff; opacity: 0; transition: opacity 180ms ease-out; }
 .assets-cover-play::before { position: absolute; width: 42px; height: 42px; border: 1.5px solid rgba(255, 255, 255, .78); border-radius: var(--r-full); background: rgba(10, 10, 10, .36); content: ""; backdrop-filter: blur(6px); }
 .assets-cover-play svg { position: relative; width: 17px; height: 17px; margin-left: 2px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, .45)); }

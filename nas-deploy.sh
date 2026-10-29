@@ -36,6 +36,8 @@ BRANCH="${BRANCH:-local/daily}"
 PUBLIC_PORT="${PUBLIC_PORT:-3050}"
 INTERNAL_PORT="${INTERNAL_PORT:-3051}"
 FORCE_BUILD="${FORCE_BUILD:-0}"
+# NAS 只有 4 GB 内存：并行构建四个镜像会把整机压到无响应。设置 1 让 compose 逐个构建。
+COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-}"
 # pull-models 的后台账号密码：优先环境变量，否则读 .local/nas-admin.env（本机、已被 git 忽略）。
 NAS_ADMIN_USER="${NAS_ADMIN_USER:-}"
 NAS_ADMIN_PASSWORD="${NAS_ADMIN_PASSWORD:-}"
@@ -115,6 +117,9 @@ DATA='$DATA_DIR'
 OPS="\$DATA/ops"
 DOCKER=/usr/local/bin/docker
 d() { "\$@"; }
+# 只在显式设置时生效，避免影响默认并行度。
+COMPOSE_PARALLEL_LIMIT='$COMPOSE_PARALLEL_LIMIT'
+[ -n "\$COMPOSE_PARALLEL_LIMIT" ] && export COMPOSE_PARALLEL_LIMIT
 compose() { cd "\$APP" && "\$DOCKER" compose --env-file "\$APP/.env" -f "\$APP/docker-compose.deploy.yml" -f "\$APP/docker-compose.build.yml" -f "\$OPS/compose.tls.yml" "\$@"; }
 PRELUDE
 }

@@ -26,6 +26,7 @@ func newProjectSettingsTestService(t *testing.T) (*Service, *gorm.DB) {
 		&model.CreationRun{}, &model.CreationSubmission{},
 		&model.CloudAgentResourceLease{}, &model.Tool{}, &model.WorkbenchTool{},
 		&model.Announcement{}, &model.AnnouncementImageDraft{},
+		&model.BatchVideoReferenceAsset{}, &model.BatchVideoMaterialBatch{},
 	); err != nil {
 		t.Fatal(err)
 	}

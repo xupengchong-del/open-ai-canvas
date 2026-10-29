@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -119,7 +121,10 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 		} else {
 			data["url"] = url
 		}
-		title := map[string]string{"image": "生成图片", "video": "生成视频", "audio": "生成音频"}[checkpoint.Mode]
+		title, err := s.nextGeneratedMediaTitle(task.UserID, checkpoint.Mode)
+		if err != nil {
+			return err
+		}
 		metadata := map[string]any{"source": "generation-task", "generationEffectKey": effectKey, "taskId": task.ID, "outputIndex": index}
 		if projectID != "" {
 			metadata["projectIds"] = []string{projectID}
@@ -151,4 +156,21 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 		}
 	}
 	return nil
+}
+
+// 生成素材按「日期-序号」命名，避免素材库堆满同名的「生成视频」。
+func (s *Service) nextGeneratedMediaTitle(userID string, kind string) (string, error) {
+	day := time.Now().Format("20060102")
+	titles, err := s.repo.AssetTitlesWithPrefix(userID, kind, day+"-")
+	if err != nil {
+		return "", err
+	}
+	next := 1
+	for _, title := range titles {
+		sequence, convErr := strconv.Atoi(strings.TrimPrefix(title, day+"-"))
+		if convErr == nil && sequence >= next {
+			next = sequence + 1
+		}
+	}
+	return fmt.Sprintf("%s-%03d", day, next), nil
 }

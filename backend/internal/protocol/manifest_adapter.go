@@ -104,7 +104,19 @@ func (a manifestAdapter) ParseCreateWithRequest(_ context.Context, request Gener
 	if a.manifest.Response.BinaryPayload {
 		return binaryPayloadCreateResult(a.manifest.Response.ResultKind, body)
 	}
-	payload, err := decodeObject(body)
+	// 部分 OpenAI 兼容网关对非流式请求也返回 SSE；先合并成普通响应再按清单映射读取。
+	payload, matched, err := mergeEventStreamPayload(body)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	if matched {
+		created := a.parse(payload, PollContext{})
+		if created.Status == StatusPending && created.Result == nil && len(a.manifest.Response.TextPaths) > 0 {
+			return CreateResult{}, fmt.Errorf("上游流式响应没有正文，请检查模型是否支持当前请求")
+		}
+		return created, nil
+	}
+	payload, err = decodeObject(body)
 	if err != nil {
 		return CreateResult{}, err
 	}

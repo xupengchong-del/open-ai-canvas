@@ -493,3 +493,32 @@ func TestMediaRecoveryBatchVideoEncryptedInputForcesLocalWithoutPersistingPlaint
 		t.Fatal("recovery persisted decrypted task input")
 	}
 }
+
+func TestNextGeneratedMediaTitleUsesDateAndKindSequence(t *testing.T) {
+	s, db := newMediaRecoveryTestService(t)
+	day := time.Now().Format("20060102")
+	for _, asset := range []model.Asset{
+		{ID: "video-1", UserID: "title-user", Kind: "video", Title: day + "-001", PayloadJSON: "{}"},
+		{ID: "video-2", UserID: "title-user", Kind: "video", Title: day + "-007", PayloadJSON: "{}"},
+		{ID: "image-1", UserID: "title-user", Kind: "image", Title: day + "-001", PayloadJSON: "{}"},
+		{ID: "other-user", UserID: "other-user", Kind: "video", Title: day + "-009", PayloadJSON: "{}"},
+	} {
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	video, err := s.nextGeneratedMediaTitle("title-user", "video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if video != day+"-008" {
+		t.Fatalf("视频序号 = %s，期望 %s-008", video, day)
+	}
+	image, err := s.nextGeneratedMediaTitle("title-user", "image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image != day+"-002" {
+		t.Fatalf("图片序号 = %s，期望 %s-002", image, day)
+	}
+}

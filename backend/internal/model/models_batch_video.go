@@ -4,24 +4,28 @@ import "time"
 
 // 批量视频模块独立建表，不复用画布批次字段，避免与画布节点 metadata 耦合。
 type BatchVideoProject struct {
-	ID                     string     `json:"id" gorm:"primaryKey;size:36"`
-	UserID                 string     `json:"userId" gorm:"index;size:36;index:idx_batch_video_projects_user_created,priority:1"`
-	Name                   string     `json:"name" gorm:"size:160;not null"`
-	ProductName            string     `json:"productName" gorm:"size:160"`
-	Stage                  string     `json:"stage" gorm:"size:40;index;not null;default:draft"`
-	Status                 string     `json:"status" gorm:"size:40;index;not null;default:draft"`
-	SettingsJSON           string     `json:"settingsJson" gorm:"type:text"`
-	ProductProfileJSON     string     `json:"productProfileJson" gorm:"type:text"`
-	StandardValidationJSON string     `json:"standardValidationJson" gorm:"type:text"`
-	CurrentProfileVersion  int        `json:"currentProfileVersion" gorm:"not null;default:1"`
-	ReferencePoolVersion   int        `json:"referencePoolVersion" gorm:"not null;default:1"`
-	AnalysisTaskID         string     `json:"analysisTaskId" gorm:"size:36;index"`
-	AnalysisStatus         string     `json:"analysisStatus" gorm:"size:24;index;not null;default:none"`
-	AnalysisError          string     `json:"analysisError" gorm:"type:text"`
-	MassUnlockedAt         *time.Time `json:"massUnlockedAt,omitempty"`
-	MassUnlockedBy         string     `json:"massUnlockedBy,omitempty" gorm:"size:36"`
-	CreatedAt              time.Time  `json:"createdAt" gorm:"index:idx_batch_video_projects_user_created,priority:2"`
-	UpdatedAt              time.Time  `json:"updatedAt"`
+	ID                     string `json:"id" gorm:"primaryKey;size:36"`
+	UserID                 string `json:"userId" gorm:"index;size:36;index:idx_batch_video_projects_user_created,priority:1"`
+	Name                   string `json:"name" gorm:"size:160;not null"`
+	ProductName            string `json:"productName" gorm:"size:160"`
+	Stage                  string `json:"stage" gorm:"size:40;index;not null;default:draft"`
+	Status                 string `json:"status" gorm:"size:40;index;not null;default:draft"`
+	SettingsJSON           string `json:"settingsJson" gorm:"type:text"`
+	ProductProfileJSON     string `json:"productProfileJson" gorm:"type:text"`
+	StandardValidationJSON string `json:"standardValidationJson" gorm:"type:text"`
+	CurrentProfileVersion  int    `json:"currentProfileVersion" gorm:"not null;default:1"`
+	ReferencePoolVersion   int    `json:"referencePoolVersion" gorm:"not null;default:1"`
+	AnalysisTaskID         string `json:"analysisTaskId" gorm:"size:36;index"`
+	AnalysisStatus         string `json:"analysisStatus" gorm:"size:24;index;not null;default:none"`
+	AnalysisError          string `json:"analysisError" gorm:"type:text"`
+	// AnalysisCurrentAssetID 指向逐张分析正在处理的上传素材；文档分析或空闲时为空。
+	AnalysisCurrentAssetID string `json:"analysisCurrentAssetId" gorm:"size:36;index"`
+	// ScheduledStartAt 只约束已提交但尚未开始的生成任务；空值表示等待用户手动开始。
+	ScheduledStartAt *time.Time `json:"scheduledStartAt,omitempty"`
+	MassUnlockedAt   *time.Time `json:"massUnlockedAt,omitempty"`
+	MassUnlockedBy   string     `json:"massUnlockedBy,omitempty" gorm:"size:36"`
+	CreatedAt        time.Time  `json:"createdAt" gorm:"index:idx_batch_video_projects_user_created,priority:2"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
 }
 
 func (BatchVideoProject) TableName() string { return "batch_video_projects" }
@@ -74,13 +78,19 @@ type BatchVideoReferenceAsset struct {
 	Status      string `json:"status" gorm:"size:24;index:idx_batch_video_reference_assets_project_status,priority:2;not null;default:draft"`
 	Version     int    `json:"version" gorm:"not null;default:1"`
 	// GeneratedReference 资产由批量模块的图片任务生成；CreativeID 用于回填匹配。
-	GenerationTaskID string     `json:"generationTaskId" gorm:"size:36;index"`
-	CreativeID       string     `json:"creativeId" gorm:"size:36;index"`
-	GenerationError  string     `json:"generationError" gorm:"type:text"`
-	UsageCount       int        `json:"usageCount"`
-	LastUsedAt       *time.Time `json:"lastUsedAt,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
+	GenerationTaskID string `json:"generationTaskId" gorm:"size:36;index"`
+	CreativeID       string `json:"creativeId" gorm:"size:36;index"`
+	GenerationError  string `json:"generationError" gorm:"type:text"`
+	// 上传素材逐张独立分析；生成参考图由生成流程直接写描述，标记 skipped。
+	AnalysisStatus     string     `json:"analysisStatus" gorm:"size:24;index;not null;default:pending"`
+	AnalysisTaskID     string     `json:"analysisTaskId" gorm:"size:36;index"`
+	AnalysisError      string     `json:"analysisError" gorm:"type:text"`
+	AnalysisResultJSON string     `json:"analysisResultJson" gorm:"type:text"`
+	AnalyzedAt         *time.Time `json:"analyzedAt,omitempty"`
+	UsageCount         int        `json:"usageCount"`
+	LastUsedAt         *time.Time `json:"lastUsedAt,omitempty"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 func (BatchVideoReferenceAsset) TableName() string { return "batch_video_reference_assets" }
@@ -149,15 +159,17 @@ type BatchVideoCreative struct {
 func (BatchVideoCreative) TableName() string { return "batch_video_creatives" }
 
 type BatchVideoGenerationJob struct {
-	ID                string    `json:"id" gorm:"primaryKey;size:36"`
-	ProjectID         string    `json:"projectId" gorm:"index;size:36;index:idx_batch_video_generation_jobs_project_status,priority:1"`
-	CreativeID        string    `json:"creativeId" gorm:"index;size:36"`
-	UserID            string    `json:"userId" gorm:"index;size:36"`
-	ModelID           string    `json:"modelId" gorm:"size:120"`
-	ChannelModelID    string    `json:"channelModelId" gorm:"size:36"`
-	LogicalModelID    string    `json:"logicalModelId" gorm:"size:36"`
-	Mode              string    `json:"mode" gorm:"size:16;not null;default:single"`
-	Status            string    `json:"status" gorm:"size:24;index:idx_batch_video_generation_jobs_project_status,priority:2;not null;default:waiting"`
+	ID             string `json:"id" gorm:"primaryKey;size:36"`
+	ProjectID      string `json:"projectId" gorm:"index;size:36;index:idx_batch_video_generation_jobs_project_status,priority:1"`
+	CreativeID     string `json:"creativeId" gorm:"index;size:36"`
+	UserID         string `json:"userId" gorm:"index;size:36"`
+	ModelID        string `json:"modelId" gorm:"size:120"`
+	ChannelModelID string `json:"channelModelId" gorm:"size:36"`
+	LogicalModelID string `json:"logicalModelId" gorm:"size:36"`
+	Mode           string `json:"mode" gorm:"size:16;not null;default:single"`
+	Status         string `json:"status" gorm:"size:24;index:idx_batch_video_generation_jobs_project_status,priority:2;not null;default:submitted"`
+	// ModelPriority 是提交时当前候选模型的优先级快照，调度队列按它从大到小取任务。
+	ModelPriority     int       `json:"modelPriority" gorm:"not null;default:50"`
 	CurrentTaskID     string    `json:"currentTaskId" gorm:"index;size:36"`
 	TaskTemplateJSON  string    `json:"-" gorm:"type:text"`
 	AttemptsUsed      int       `json:"attemptsUsed"`

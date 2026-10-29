@@ -1,5 +1,5 @@
 import { Button, Checkbox, Drawer, Input, InputNumber, Modal, Radio, Tag } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Select } from "@/components/ui/base/select";
 import { formatCredits } from "@/constant/credits";
@@ -9,10 +9,8 @@ import type {
     BatchVideoDocumentInput,
     BatchVideoMaterialInput,
     BatchVideoModelOption,
-    BatchVideoPlanningModelOption,
     BatchVideoProjectDetail,
     BatchVideoProjectSettings,
-    BatchVideoReferenceModelOption,
 } from "@/services/api/batch-video";
 import { MaterialUploader } from "./material-uploader";
 
@@ -28,16 +26,12 @@ const ASPECT_OPTIONS = [
 export function ProjectSettingsDrawer({
     open,
     detail,
-    planningModels,
-    referenceModels,
     saving,
     onClose,
     onSave,
 }: {
     open: boolean;
     detail: BatchVideoProjectDetail;
-    planningModels: BatchVideoPlanningModelOption[];
-    referenceModels: BatchVideoReferenceModelOption[];
     saving: boolean;
     onClose: () => void;
     onSave: (settings: BatchVideoProjectSettings) => void;
@@ -57,20 +51,6 @@ export function ProjectSettingsDrawer({
             }
         >
             <div className="grid gap-4">
-                <label className="grid gap-1.5 text-sm">
-                    <span className="font-medium">策划模型</span>
-                    <Select
-                        value={draft.planningChannelModelId}
-                        onChange={(value) => update({ planningChannelModelId: String(value) })}
-                        options={planningModels.map((model) => ({
-                            value: model.channelModelId,
-                            label: `${model.displayName}${model.maxImages > 0 ? ` · 视觉 ${model.maxImages} 图` : " · 不支持读图"}`,
-                            disabled: model.maxImages <= 0,
-                        }))}
-                        className="w-full"
-                    />
-                    <span className="text-xs text-foreground/45">素材分析必须使用支持读图的文本模型。</span>
-                </label>
                 <div className="grid grid-cols-2 gap-3">
                     <label className="grid gap-1.5 text-sm">
                         <span className="font-medium">视频时长</span>
@@ -82,22 +62,12 @@ export function ProjectSettingsDrawer({
                     </label>
                 </div>
                 <label className="grid gap-1.5 text-sm">
-                    <span className="font-medium">参考图生成模型（可选）</span>
-                    <Select
-                        value={draft.referenceModelId}
-                        onChange={(value) => update({ referenceModelId: String(value || "") })}
-                        options={[{ value: "", label: "不生成，只使用上传素材" }, ...referenceModels.map((model) => ({ value: model.channelModelId, label: model.displayName }))]}
-                        className="w-full"
-                    />
-                    <span className="text-xs text-foreground/45">创意缺少可用参考图时，用它按图片提示词生成；生成图保存在服务器本地。</span>
-                </label>
-                <label className="grid gap-1.5 text-sm">
                     <span className="font-medium">标准轮创意数量</span>
                     <InputNumber min={5} max={20} value={draft.standardCreativeCount} onChange={(value) => update({ standardCreativeCount: Number(value) || 5 })} className="w-full" />
                     <span className="text-xs text-foreground/45">标准验收可配置 5–20 条，默认 10 条。</span>
                 </label>
                 <div className="rounded-lg bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                    修改策划模型或参数后，已有分析会标记为过期；需要重新分析素材后再生成创意。
+                    修改参数后，已有分析会标记为过期；需要重新分析素材后再生成创意。
                 </div>
             </div>
         </Drawer>
@@ -287,7 +257,7 @@ export function SubmitDialog({
                         <Radio.Button value="multi">模式 b：同时提交多个模型</Radio.Button>
                     </Radio.Group>
                     <span className="text-xs text-foreground/45">
-                        {mode === "single" ? "每个创意先走一个候选模型，失败达到上限后切换；预检费用不含后续重试。" : "每个创意同时提交到所选模型，任务数与费用按模型数量计算。"}
+                        {mode === "single" ? "每个创意先走优先级最高的模型，失败达到上限后按优先级切换；预检费用不含后续重试。" : "每个创意同时提交到所选模型，任务数与费用按模型数量计算；调度时优先调用优先级高的模型。"}
                     </span>
                 </div>
                 <label className="grid gap-1.5 text-sm">
@@ -296,7 +266,7 @@ export function SubmitDialog({
                         mode="multiple"
                         value={modelIds}
                         onChange={(values) => change(setModelIds, values.map(String))}
-                        options={models.map((model) => ({ value: model.channelModelId, label: `${model.displayName} · 单次≤${model.maxItems} 条` }))}
+                        options={[...models].sort((left, right) => right.priority - left.priority).map((model) => ({ value: model.channelModelId, label: `${model.displayName} · 优先级 ${model.priority} · 单次≤${model.maxItems} 条` }))}
                         placeholder={models.length === 0 ? "暂无可用模型" : "选择一个或多个模型"}
                         className="w-full"
                     />
@@ -305,6 +275,7 @@ export function SubmitDialog({
                     ) : null}
                 </label>
                 <div className="rounded-lg bg-surface-active/50 px-3 py-2 text-xs leading-6 text-foreground/60">
+                    <div>提交后不会立即调用模型；需要在任务面板点击“开始生成”或设置定时。</div>
                     <div>预计任务数：<span className="font-semibold text-foreground">{preflight?.jobCount ?? estimated}</span></div>
                     {preflight ? (
                         <>
@@ -323,11 +294,13 @@ export function SubmitDialog({
 
 export function AddBatchModal({
     open,
+    hasMaterials,
     submitting,
     onClose,
     onConfirm,
 }: {
     open: boolean;
+    hasMaterials: boolean;
     submitting: boolean;
     onClose: () => void;
     onConfirm: (payload: { label: string; materials: BatchVideoMaterialInput[]; documents: BatchVideoDocumentInput[] }) => void;
@@ -335,29 +308,80 @@ export function AddBatchModal({
     const [label, setLabel] = useState("");
     const [materials, setMaterials] = useState<BatchVideoMaterialInput[]>([]);
     const [documents, setDocuments] = useState<BatchVideoDocumentInput[]>([]);
+    const uploadedRef = useRef<Set<string>>(new Set());
+    const removedRef = useRef<Set<string>>(new Set());
+    const openRef = useRef(open);
+    useEffect(() => {
+        openRef.current = open;
+        if (!open) {
+            setLabel("");
+            setMaterials([]);
+            setDocuments([]);
+            uploadedRef.current.clear();
+            removedRef.current.clear();
+        }
+    }, [open]);
+    const discardUploads = (ids: Iterable<string>) => {
+        const unique = Array.from(new Set(Array.from(ids).filter(Boolean)));
+        if (unique.length === 0) return;
+        void batchVideoApi.discardUploads(unique).catch(() => {});
+    };
+    const changeMaterials = (next: BatchVideoMaterialInput[]) => {
+        const currentIDs = new Set(materials.map((item) => item.resourceId));
+        const nextIDs = new Set(next.map((item) => item.resourceId));
+        next.forEach((item) => {
+            if (!currentIDs.has(item.resourceId)) {
+                uploadedRef.current.add(item.resourceId);
+                removedRef.current.delete(item.resourceId);
+            }
+        });
+        materials.forEach((item) => {
+            if (!nextIDs.has(item.resourceId)) removedRef.current.add(item.resourceId);
+        });
+        if (!openRef.current) {
+            // 关闭后才完成的上传没有进入批次，直接回收，避免留下死文件。
+            discardUploads(Array.from(uploadedRef.current));
+            uploadedRef.current.clear();
+            removedRef.current.clear();
+            return;
+        }
+        setMaterials(next);
+    };
+    const cancel = () => {
+        discardUploads(Array.from(uploadedRef.current));
+        uploadedRef.current.clear();
+        removedRef.current.clear();
+        onClose();
+    };
+    const confirm = () => {
+        // 被移除的已上传文件不属于本次提交，确认时立即回收。
+        discardUploads(Array.from(removedRef.current));
+        removedRef.current.clear();
+        onConfirm({ label: label.trim(), materials, documents });
+    };
     return (
         <Modal
             open={open}
-            title="追加素材批次"
-            onCancel={onClose}
+            title={hasMaterials ? "追加素材批次" : "上传素材"}
+            onCancel={cancel}
             width={760}
             footer={
                 <>
-                    <Button onClick={onClose}>取消</Button>
-                    <Button type="primary" loading={submitting} disabled={materials.length === 0 && documents.length === 0} onClick={() => onConfirm({ label: label.trim() || "追加素材", materials, documents })}>
-                        追加
+                    <Button onClick={cancel}>取消</Button>
+                    <Button type="primary" loading={submitting} disabled={materials.length === 0 && documents.length === 0} onClick={confirm}>
+                        {hasMaterials ? "追加并分析" : "上传并分析"}
                     </Button>
                 </>
             }
         >
             <div className="grid gap-4 py-2">
                 <label className="grid gap-1.5 text-sm">
-                    <span className="font-medium">批次名称</span>
-                    <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="例如：第二批白底图" maxLength={160} />
+                    <span className="font-medium">批次名称（可选）</span>
+                    <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="留空自动使用当天日期" maxLength={160} />
                 </label>
-                <MaterialUploader materials={materials} onMaterialsChange={setMaterials} documents={documents} onDocumentsChange={setDocuments} compact />
+                <MaterialUploader materials={materials} onMaterialsChange={changeMaterials} documents={documents} onDocumentsChange={setDocuments} compact />
                 <div className="rounded-lg bg-surface-active/50 px-3 py-2 text-xs text-foreground/55">
-                    追加后建议重新分析素材，把新图片的卖点和描述合并进产品档案。
+                    {hasMaterials ? "追加成功后自动开始分析，把新素材的卖点和参考图说明合并进产品档案；数字命名的图片会按数值升序排列。" : "上传成功后自动开始分析，生成产品档案、卖点和参考图说明；数字命名的图片会按数值升序排列。"}
                 </div>
             </div>
         </Modal>

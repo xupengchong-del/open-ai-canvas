@@ -415,6 +415,43 @@
     color: inherit;
 }
 
+/* 收起入口是面板的退出路径：用原生按钮 + 描边和文字标签，与纯图标操作区分开。 */
+.canvas-agent-panel .agent-panel-collapse {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 30px;
+    padding-inline: var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--agent-ink) 26%, transparent);
+    border-radius: calc(var(--radius) * 2);
+    background: var(--agent-surface-raised);
+    color: var(--agent-ink);
+    font-size: var(--fs-label);
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.canvas-agent-panel .agent-panel-collapse:hover {
+    border-color: color-mix(in srgb, var(--agent-ink) 42%, transparent);
+    background: color-mix(in srgb, var(--agent-ink) 10%, var(--agent-material-solid));
+}
+
+.canvas-agent-panel .agent-panel-collapse:active {
+    background: color-mix(in srgb, var(--agent-ink) 16%, var(--agent-material-solid));
+}
+
+.canvas-agent-panel .agent-panel-collapse:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .canvas-agent-panel .agent-panel-collapse {
+        transition: none;
+    }
+}
+
 .agent-conversation {
     padding: 10px var(--space-4) var(--space-4);
     scroll-padding-block: var(--space-4);
@@ -1024,6 +1061,14 @@
     .agent-panel-header {
         gap: var(--space-2);
         padding-inline: var(--space-4);
+    }
+    .canvas-agent-panel .agent-panel-collapse {
+        width: 30px;
+        padding-inline: 0;
+        justify-content: center;
+    }
+    .agent-panel-collapse-label {
+        display: none;
     }
     .agent-panel-status {
         white-space: nowrap;

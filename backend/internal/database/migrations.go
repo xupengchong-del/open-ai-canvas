@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"yingce/backend/internal/model"
@@ -11,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 64
+const CurrentSchemaVersion int64 = 68
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -37,6 +39,8 @@ const channelModelUpstreamPriceNoteChecksum = "sha256:channel-model-upstream-pri
 const legacyChannelModelUpstreamPriceNoteChecksum = "sha256:channel-model-upstream-price-note-v55-20261012"
 const batchVideoProductionChecksum = "sha256:batch-video-production-v62-20261026"
 const batchVideoReferenceGenerationChecksum = "sha256:batch-video-reference-generation-v63-20261026"
+const generatedAssetTitlesChecksum = "sha256:generated-asset-titles-v67-20261029"
+const generatedAssetOrderChecksum = "sha256:generated-asset-order-v68-20261029"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -217,6 +221,22 @@ var schemaMigrations = []migration{
 	{version: 64, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v64", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{}, &model.BatchVideoAttempt{})
 	}},
+	{version: 65, name: "batch_video_start_schedule_priority", checksum: "sha256:batch-video-start-schedule-priority-v65", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{})
+	}},
+	{version: 66, name: "batch_video_per_image_analysis", checksum: "sha256:batch-video-per-image-analysis-v66", apply: migrateBatchVideoPerImageAnalysis},
+	{version: 67, name: "generated_asset_titles", checksum: generatedAssetTitlesChecksum, apply: migrateGeneratedAssetTitles},
+	{version: 68, name: "generated_asset_order", checksum: generatedAssetOrderChecksum, apply: migrateGeneratedAssetOrder},
+}
+
+func migrateBatchVideoPerImageAnalysis(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoReferenceAsset{}); err != nil {
+		return err
+	}
+	// 生成参考图已有描述，不参与上传素材的逐张分析队列。
+	return tx.Model(&model.BatchVideoReferenceAsset{}).
+		Where("generation_task_id <> ''").
+		Update("analysis_status", "skipped").Error
 }
 
 func migrateChannelModelProtocolLength(tx *gorm.DB) error {
@@ -772,4 +792,134 @@ func RequireSchemaVersion(db *gorm.DB) error {
 		return fmt.Errorf("数据库结构版本 %d 高于程序支持的 %d，拒绝使用旧程序连接新数据库", status.Current, status.Expected)
 	}
 	return nil
+}
+
+// 生成素材曾统一叫「生成视频/图片/音频」，素材库无法区分也无法按名导出。
+// 这里按用户、类型和创建日期重编号为「YYYYMMDD-序号」，同时改写标题列和 payload，
+// 让分页列表（以素材表标题为准）和详情/快照（以 payload 为准）看到同一个名字。
+func migrateGeneratedAssetTitles(tx *gorm.DB) error {
+	type assetRow struct {
+		ID          string
+		UserID      string
+		Kind        string
+		Title       string
+		PayloadJSON string
+		CreatedAt   time.Time
+	}
+	var legacy []assetRow
+	if err := tx.Model(&model.Asset{}).
+		Select("id, user_id, kind, title, payload_json, created_at").
+		Where("title IN ?", []string{"生成图片", "生成视频", "生成音频"}).
+		Where("payload_json LIKE ?", `%"source":"generation-task"%`).
+		Order("user_id, kind, created_at, id").
+		Find(&legacy).Error; err != nil {
+		return err
+	}
+	if len(legacy) == 0 {
+		return nil
+	}
+	var existing []assetRow
+	if err := tx.Model(&model.Asset{}).
+		Select("id, user_id, kind, title, created_at").
+		Where("title LIKE ?", "________-%").
+		Find(&existing).Error; err != nil {
+		return err
+	}
+	sequences := map[string]int{}
+	for _, row := range existing {
+		day, sequence, ok := parseGeneratedAssetTitle(row.Title)
+		if !ok {
+			continue
+		}
+		key := row.UserID + "|" + row.Kind + "|" + day
+		if sequence > sequences[key] {
+			sequences[key] = sequence
+		}
+	}
+	for _, row := range legacy {
+		day := row.CreatedAt.Local().Format("20060102")
+		key := row.UserID + "|" + row.Kind + "|" + day
+		sequences[key]++
+		title := fmt.Sprintf("%s-%03d", day, sequences[key])
+		payload, err := retitleAssetPayload(row.PayloadJSON, title)
+		if err != nil {
+			return fmt.Errorf("素材 %s 标题迁移失败：%w", row.ID, err)
+		}
+		if err := tx.Model(&model.Asset{}).Where("id = ?", row.ID).Updates(map[string]any{"title": title, "payload_json": payload}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// 迁移 67 用 GORM Updates 改写标题时会顺带刷新 updated_at；素材库按 updated_at 排序，
+// 被改名的生成素材因此跳到列表最前。这里把它们的 updated_at 恢复成自身 payload 记录的时间。
+func migrateGeneratedAssetOrder(tx *gorm.DB) error {
+	type assetRow struct {
+		ID          string
+		Title       string
+		PayloadJSON string
+		UpdatedAt   time.Time
+	}
+	var rows []assetRow
+	if err := tx.Model(&model.Asset{}).
+		Select("id, title, payload_json, updated_at").
+		Where("title LIKE ?", "________-%").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if _, _, ok := parseGeneratedAssetTitle(row.Title); !ok {
+			continue
+		}
+		var payload struct {
+			UpdatedAt string `json:"updatedAt"`
+		}
+		if json.Unmarshal([]byte(row.PayloadJSON), &payload) != nil || payload.UpdatedAt == "" {
+			continue
+		}
+		updatedAt, err := time.Parse(time.RFC3339Nano, payload.UpdatedAt)
+		if err != nil || updatedAt.Equal(row.UpdatedAt) {
+			continue
+		}
+		if err := tx.Model(&model.Asset{}).Where("id = ?", row.ID).UpdateColumn("updated_at", updatedAt).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseGeneratedAssetTitle(title string) (string, int, bool) {
+	title = strings.TrimSpace(title)
+	if len(title) < 10 || title[8] != '-' {
+		return "", 0, false
+	}
+	day := title[:8]
+	for _, char := range day {
+		if char < '0' || char > '9' {
+			return "", 0, false
+		}
+	}
+	sequence, err := strconv.Atoi(title[9:])
+	if err != nil || sequence <= 0 {
+		return "", 0, false
+	}
+	return day, sequence, true
+}
+
+func retitleAssetPayload(raw string, title string) (string, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(title)
+	if err != nil {
+		return "", err
+	}
+	payload["title"] = encoded
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }

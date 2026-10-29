@@ -93,7 +93,27 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const canvasContext = useGlobalAgentStore((state) => state.canvas);
     const open = useGlobalAgentStore((state) => state.open);
     const onOpen = useGlobalAgentStore((state) => state.openAgent);
+    const launcherEnabled = useGlobalAgentStore((state) => state.launcherEnabled);
     const onCollapse = useGlobalAgentStore((state) => state.closeAgent);
+
+    useEffect(() => {
+        if (!open) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== "Escape" || event.defaultPrevented) return;
+            const target = event.target as HTMLElement | null;
+            const editable = target?.closest("textarea, input, [contenteditable='true']") as HTMLElement | null;
+            // 正在输入时不收起，避免误丢草稿；空输入框按 Esc 直接收起。
+            if (editable) {
+                const draft = editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement ? editable.value : editable.textContent || "";
+                if (draft.trim()) return;
+            }
+            if (document.querySelector(".ant-modal-root .ant-modal-wrap, .ant-drawer-open, .ant-popover:not(.ant-popover-hidden)")) return;
+            event.preventDefault();
+            onCollapse();
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [open, onCollapse]);
     const canvasId = canvasContext?.canvasId ?? "";
     const domainProjectId = canvasContext?.domainProjectId;
     const nodeCount = canvasContext?.nodeCount ?? 0;
@@ -1246,7 +1266,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
 
     return (
         <>
-            <AgentLauncher theme={theme} statusColor={statusColor} approvalPending={Boolean(approval)} reducedMotion={Boolean(reducedMotion)} status={status} hidden={open} onOpen={onOpen} />
+            {launcherEnabled ? <AgentLauncher theme={theme} statusColor={statusColor} approvalPending={Boolean(approval)} reducedMotion={Boolean(reducedMotion)} status={status} hidden={open} onOpen={onOpen} /> : null}
             <AnimatePresence>
                 {open ? (
                     <motion.aside

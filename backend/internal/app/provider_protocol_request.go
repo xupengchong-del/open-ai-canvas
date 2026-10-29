@@ -95,6 +95,23 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 			}
 		}
 	}
+	// 声明式文本协议无法像内置 chat/responses 那样自动改写请求体；
+	// 把流式意图放进 extra 和插件命名空间，供清单里的 stream 字段映射使用。
+	// 部分网关（如 A6api 风格中转）只有 stream=true 才返回正文。
+	if input.Mode == "text" && input.StreamText {
+		request.Extra["stream"] = true
+		namespace := strings.TrimSpace(input.Config.InterfaceType)
+		if namespace != "" {
+			options := request.ProviderOptions[namespace]
+			if options == nil {
+				options = map[string]any{}
+			}
+			if _, exists := options["stream"]; !exists {
+				options["stream"] = true
+			}
+			request.ProviderOptions[namespace] = options
+		}
+	}
 	if input.Mode == "image" && input.Config.InterfaceType == string(model.ChannelInterfaceGrokImage) {
 		options := make(map[string]any)
 		for name, value := range request.ProviderOptions[input.Config.InterfaceType] {

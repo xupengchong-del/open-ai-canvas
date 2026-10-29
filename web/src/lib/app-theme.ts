@@ -401,6 +401,11 @@ export function getWorkspaceAntThemeConfig(): ThemeConfig {
                 defaultShadow: "none", primaryShadow: "none", dangerShadow: "none",
                 paddingInline: 14, paddingInlineSM: 10,
             },
+            // 默认 Tag 背景由 antd 从 colorText 派生；主题色是 oklch 时会退化成不透明黑色，这里直接给出可读的表面色。
+            Tag: {
+                defaultBg: "var(--user-surface-muted, color-mix(in srgb, var(--foreground) 6%, transparent))",
+                defaultColor: "var(--user-ink, var(--foreground))",
+            },
             Input: {
                 borderRadius: 12,
                 paddingInline: 12,

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"yingce/backend/internal/model"
 )
 
 func TestValidateImageTaskRejectsOversizedGrokPromptByUTF8Bytes(t *testing.T) {
@@ -435,5 +437,72 @@ func TestValidateVideoTaskRequiresDeclaredMinimumImages(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "至少需要 1 张参考图") {
 		t.Fatalf("validateVideoTask() error = %v", err)
+	}
+}
+
+func TestModelPriorityNormalizesForEveryCapability(t *testing.T) {
+	base := DefaultModelCapabilityConfig("openai")
+	cases := []struct {
+		name       string
+		capability string
+		input      *ModelCapabilityConfig
+		want       int
+	}{
+		{name: "text default", capability: "text", input: &ModelCapabilityConfig{Version: 1, Text: base.Text}, want: DefaultModelPriority},
+		{name: "image explicit", capability: "image", input: &ModelCapabilityConfig{Version: 1, Priority: 80, Image: base.Image}, want: 80},
+		{name: "video legacy batch priority", capability: "video", input: &ModelCapabilityConfig{Version: 1, Video: func() *VideoCapabilityConfig {
+			video := *base.Video
+			video.BatchGeneration.Priority = 70
+			return &video
+		}()}, want: 70},
+		{name: "video top-level wins", capability: "video", input: &ModelCapabilityConfig{Version: 1, Priority: 90, Video: func() *VideoCapabilityConfig {
+			video := *base.Video
+			video.BatchGeneration.Priority = 10
+			return &video
+		}()}, want: 90},
+		{name: "audio explicit", capability: "audio", input: &ModelCapabilityConfig{Version: 1, Priority: 77}, want: 77},
+		{name: "audio default", capability: "audio", input: nil, want: DefaultModelPriority},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			normalized, err := NormalizeModelCapabilityConfigForModel(tc.capability, "openai", "test-model", tc.input)
+			if err != nil {
+				t.Fatalf("normalize %s error = %v", tc.capability, err)
+			}
+			if got := effectiveModelPriority(normalized); got != tc.want {
+				t.Fatalf("priority = %d, want %d", got, tc.want)
+			}
+			if normalized.Priority != tc.want {
+				t.Fatalf("normalized priority = %d, want %d", normalized.Priority, tc.want)
+			}
+			if tc.capability == "video" && normalized.Video.BatchGeneration.Priority != tc.want {
+				t.Fatalf("legacy batch priority = %d, want %d", normalized.Video.BatchGeneration.Priority, tc.want)
+			}
+		})
+	}
+}
+
+func TestModelPriorityRejectsOutOfRange(t *testing.T) {
+	_, err := NormalizeModelCapabilityConfigForModel("audio", "openai", "", &ModelCapabilityConfig{Version: 1, Priority: maxModelPriority + 1})
+	if err == nil || !strings.Contains(err.Error(), "1-10000") {
+		t.Fatalf("out-of-range priority error = %v", err)
+	}
+}
+
+func TestSortChannelModelsByPriorityKeepsDisplayOrderForTies(t *testing.T) {
+	items := []model.ChannelModel{
+		{ID: "low", SortOrder: 1, CapabilityConfigJSON: `{"version":1,"priority":10}`},
+		{ID: "high", SortOrder: 2, CapabilityConfigJSON: `{"version":1,"priority":90}`},
+		{ID: "tie-b", SortOrder: 4, CapabilityConfigJSON: `{"version":1,"priority":50}`},
+		{ID: "tie-a", SortOrder: 3, CapabilityConfigJSON: `{"version":1,"priority":50}`},
+		{ID: "legacy", SortOrder: 5, CapabilityConfigJSON: `{"version":1,"video":{"batchGeneration":{"priority":70}}}`},
+	}
+	sortChannelModelsByPriority(items)
+	got := []string{items[0].ID, items[1].ID, items[2].ID, items[3].ID, items[4].ID}
+	want := []string{"high", "legacy", "tie-a", "tie-b", "low"}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("order = %#v, want %#v", got, want)
+		}
 	}
 }

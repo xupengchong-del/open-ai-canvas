@@ -474,5 +474,16 @@ func migrations() []tableMigration {
 		migrateTable[model.TaskTextDelta]("task_text_delta"),
 		migrateTable[model.TaskLog]("task_logs"),
 		migrateTable[model.Result]("results"),
+		migrateTable[model.ResourceStorageVariant]("resource_storage_variants"),
+		migrateTable[model.BatchVideoProject]("batch_video_projects"),
+		migrateTable[model.BatchVideoMaterialBatch]("batch_video_material_batches"),
+		migrateTable[model.BatchVideoSellingPoint]("batch_video_selling_points"),
+		migrateTable[model.BatchVideoReferenceAsset]("batch_video_reference_assets"),
+		migrateTable[model.BatchVideoCreativeRound]("batch_video_creative_rounds"),
+		migrateTable[model.BatchVideoCreative]("batch_video_creatives"),
+		migrateTable[model.BatchVideoCreativeReference]("batch_video_creative_references"),
+		migrateTable[model.BatchVideoGenerationJob]("batch_video_generation_jobs"),
+		migrateTable[model.BatchVideoAttempt]("batch_video_attempts"),
+		migrateTable[model.BatchVideoStandardValidation]("batch_video_standard_validations"),
 	}
 }

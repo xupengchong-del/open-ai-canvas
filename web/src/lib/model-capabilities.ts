@@ -34,10 +34,20 @@ export {
 
 export type ModelCapabilityConfig = {
     version: number;
+    /** 通用调用优先级：数值越大越优先，自动选择与批量调度按它降序。 */
+    priority?: number;
     text?: TextCapabilityConfig;
     image?: ImageCapabilityConfig;
     video?: VideoCapabilityConfig;
 };
+
+export const DEFAULT_MODEL_PRIORITY = 50;
+export const MAX_MODEL_PRIORITY = 10_000;
+
+/** 兼容只写过视频批量优先级的旧配置。 */
+export function modelPriorityOf(config?: ModelCapabilityConfig): number {
+    return config?.priority || config?.video?.batchGeneration.priority || DEFAULT_MODEL_PRIORITY;
+}
 
 export type TextCapabilityConfig = {
     /** Whether the upstream text endpoint accepts SSE streaming responses. */
@@ -133,7 +143,7 @@ export type VideoCapabilityConfig = {
     /** 仅 kind=processing 的视频处理模型（如画质增强）配置；生成模型为空。 */
     processing?: VideoProcessingConfig;
     /** 批量视频应用层授权；默认关闭，不代表上游支持一次请求多输出。 */
-    batchGeneration: { enabled: boolean; maxItems: number };
+    batchGeneration: { enabled: boolean; maxItems: number; priority: number };
 };
 
 export type VideoProcessingFpsPolicy = "keep_source" | "user_select";
@@ -179,6 +189,7 @@ function normalizeCapabilityStrings(values: string[]) {
 export function normalizeModelCapabilityConfig(config: ModelCapabilityConfig): ModelCapabilityConfig {
     return {
         ...config,
+        priority: modelPriorityOf(config),
         text: config.text
             ? {
                   ...config.text,
@@ -218,6 +229,7 @@ export function normalizeModelCapabilityConfig(config: ModelCapabilityConfig): M
                   batchGeneration: {
                       enabled: config.video.batchGeneration?.enabled === true,
                       maxItems: config.video.batchGeneration?.maxItems || 20,
+                      priority: modelPriorityOf(config),
                   },
               })
             : undefined,
@@ -477,7 +489,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         watermark: { supported: false, default: false },
         operations: ["text_to_video", "image_to_video"],
         defaultOperation: "text_to_video",
-        batchGeneration: { enabled: false, maxItems: 20 },
+        batchGeneration: { enabled: false, maxItems: 20, priority: 50 },
     };
     if (protocol === "volcengine-jimeng-video") {
         video.duration = { selection: "enum", values: [5, 10], default: 5 };
@@ -551,7 +563,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.defaultOperation = "enhance";
         video.processing = { fpsPolicy: "keep_source", maxSourceSeconds: DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS };
     }
-    return { version: 1, text, image: defaultImageCapabilityConfig(protocol, model), video };
+    return { version: 1, priority: DEFAULT_MODEL_PRIORITY, text, image: defaultImageCapabilityConfig(protocol, model), video };
 }
 
 export function pluginWorkflowCapabilityConfig(protocol: ModelProtocol, workflow: ModelProtocolWorkflow): ModelCapabilityConfig | undefined {

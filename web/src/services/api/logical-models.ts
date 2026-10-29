@@ -168,6 +168,8 @@ export type PublicChannelModel = {
     tags?: ModelTag[];
     description?: string;
     sortOrder?: number;
+    /** 通用调用优先级；目录按它降序返回。 */
+    priority?: number;
     icon: string;
     capability: string;
     protocol?: string;

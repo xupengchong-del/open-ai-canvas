@@ -42,6 +42,15 @@ func (r *Repository) AssetsForUserIDs(userID string, ids []string) ([]model.Asse
 	return assets, err
 }
 
+// AssetTitlesWithPrefix 只取同名前缀的标题，用于给「日期-序号」命名续号。
+func (r *Repository) AssetTitlesWithPrefix(userID string, kind string, prefix string) ([]string, error) {
+	var titles []string
+	err := r.db.Model(&model.Asset{}).
+		Where("user_id = ? AND kind = ? AND title LIKE ?", userID, kind, prefix+"%").
+		Pluck("title", &titles).Error
+	return titles, err
+}
+
 func (r *Repository) UpsertAsset(asset *model.Asset) error {
 	result := r.db.Model(&model.Asset{}).
 		Where("id = ? AND user_id = ?", asset.ID, asset.UserID).

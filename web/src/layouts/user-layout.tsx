@@ -8,6 +8,7 @@ import { isSpatialWorkbenchPath } from "@/lib/workspace-routes";
 import { getWorkspaceAntThemeConfig } from "@/lib/app-theme";
 import { useWorkspaceButtonFeedback } from "@/hooks/use-workspace-button-feedback";
 import { useUserStore } from "@/stores/use-user-store";
+import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import "@/styles/workspace-product.css";
 import "@/styles/workspace-menus.css";
 
@@ -22,6 +23,9 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const canvasEditor = /^\/canvas\/[^/]+(?:\/|$)/.test(pathname);
     const productWorkspace = !adminWorkspace && !canvasEditor;
     const userId = useUserStore((state) => state.user?.id);
+    const agentLauncherEnabled = useGlobalAgentStore((state) => state.launcherEnabled);
+    const agentMounted = useGlobalAgentStore((state) => state.mounted);
+    const agentOpen = useGlobalAgentStore((state) => state.open);
     useWorkspaceButtonFeedback(productWorkspace);
 
     useLayoutEffect(() => {
@@ -36,8 +40,9 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         };
     }, [adminWorkspace, spatialWorkbench, productWorkspace]);
 
-    // 所有登录页面共用同一个面板实例：跨路由不卸载，对话、运行和事件流都不中断。
-    const globalAgent = userId ? (
+    // 悬浮入口默认关闭：只有开启入口偏好、或本次会话真的打开过 Agent，才挂载面板与形象资源。
+    // 挂载后跨路由保持同一个实例，对话、运行和事件流都不中断。
+    const globalAgent = userId && (agentLauncherEnabled || agentMounted || agentOpen) ? (
         <Suspense fallback={null}>
             <GlobalAgentPanel key={userId} />
         </Suspense>

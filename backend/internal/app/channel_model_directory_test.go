@@ -50,3 +50,36 @@ func TestChannelModelDirectoryDefaultsAndCustomNames(t *testing.T) {
 		t.Fatalf("long default label = %q, %v", public.ChannelLabel, err)
 	}
 }
+
+func TestSaveAdminChannelModelPersistsAudioPriority(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	channel := model.ModelChannel{ID: "directory-audio", Scope: model.ChannelScopeSystem, Enabled: true, Name: "Test", BaseURL: "https://example.invalid/v1", APIKey: "synthetic", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	enabled := true
+	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, "", ChannelModelRequest{
+		ModelKey: "speech", Capability: "audio", Protocol: string(model.ChannelInterfaceOpenAIAudio),
+		CapabilityConfig: &ModelCapabilityConfig{Version: 1, Priority: 88},
+		PriceTiers:     []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", PriceConfigured: true, Enabled: &enabled}},
+		Enabled:        &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := DecodeModelCapabilityConfig(saved.CapabilityConfigJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config == nil || config.Priority != 88 || config.Text != nil || config.Image != nil || config.Video != nil {
+		t.Fatalf("audio capability config = %#v", config)
+	}
+	items, err := svc.AdminChannelModels(admin, channel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].CapabilityConfig == nil || items[0].CapabilityConfig["priority"] != float64(88) {
+		t.Fatalf("admin audio capability = %#v", items)
+	}
+}

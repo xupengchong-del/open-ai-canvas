@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,7 +17,20 @@ import (
 	"yingce/backend/internal/repository"
 )
 
-const batchVideoSettingsKey = "batch_video_settings"
+const (
+	batchVideoSettingsKey          = "batch_video_settings"
+	defaultBatchVideoModelPriority = DefaultModelPriority
+	// 默认同时分析 10 张；上限防止单项目一次性打满渠道并发。
+	defaultBatchVideoAnalysisConcurrency = 10
+	maxBatchVideoAnalysisConcurrency     = 50
+)
+
+func batchVideoModelPriority(value int) int {
+	if value <= 0 {
+		return defaultBatchVideoModelPriority
+	}
+	return value
+}
 
 type BatchVideoSettings struct {
 	StandardCreativeCount    int     `json:"standardCreativeCount"`
@@ -30,6 +44,8 @@ type BatchVideoSettings struct {
 	MaxAttemptsPerModel      int     `json:"maxAttemptsPerModel"`
 	DefaultSubmissionMode    string  `json:"defaultSubmissionMode"`
 	SamplingRate             float64 `json:"samplingRate"`
+	// AnalysisConcurrency 是逐张素材分析同时运行的任务数；0 或非法值回落到默认值。
+	AnalysisConcurrency int `json:"analysisConcurrency"`
 }
 
 func defaultBatchVideoSettings() BatchVideoSettings {
@@ -45,6 +61,7 @@ func defaultBatchVideoSettings() BatchVideoSettings {
 		MaxAttemptsPerModel:      2,
 		DefaultSubmissionMode:    "single",
 		SamplingRate:             0.1,
+		AnalysisConcurrency:      defaultBatchVideoAnalysisConcurrency,
 	}
 }
 
@@ -96,6 +113,12 @@ func normalizeBatchVideoSettings(value BatchVideoSettings) BatchVideoSettings {
 	if value.MaxNewReferencesPerRound <= 0 {
 		value.MaxNewReferencesPerRound = defaults.MaxNewReferencesPerRound
 	}
+	if value.AnalysisConcurrency <= 0 {
+		value.AnalysisConcurrency = defaults.AnalysisConcurrency
+	}
+	if value.AnalysisConcurrency > maxBatchVideoAnalysisConcurrency {
+		value.AnalysisConcurrency = maxBatchVideoAnalysisConcurrency
+	}
 	if value.MaxAttemptsPerModel <= 0 {
 		value.MaxAttemptsPerModel = defaults.MaxAttemptsPerModel
 	}
@@ -125,12 +148,10 @@ func (s *Service) UpdateBatchVideoSettings(actor *model.User, value BatchVideoSe
 }
 
 type BatchVideoProjectSettings struct {
-	DurationSeconds        int      `json:"durationSeconds"`
-	AspectRatio            string   `json:"aspectRatio"`
-	StandardCreativeCount  int      `json:"standardCreativeCount"`
-	PlanningChannelModelID string   `json:"planningChannelModelId,omitempty"`
-	ReferenceModelID       string   `json:"referenceModelId,omitempty"`
-	Templates              []string `json:"templates,omitempty"`
+	DurationSeconds       int      `json:"durationSeconds"`
+	AspectRatio           string   `json:"aspectRatio"`
+	StandardCreativeCount int      `json:"standardCreativeCount"`
+	Templates             []string `json:"templates,omitempty"`
 }
 
 type BatchVideoMaterialInput struct {
@@ -199,6 +220,7 @@ func (s *Service) validateBatchVideoInputs(userID string, materials []BatchVideo
 type BatchVideoProjectDetail struct {
 	Project         model.BatchVideoProject          `json:"project"`
 	Settings        BatchVideoProjectSettings        `json:"settings"`
+	AnalysisTask    *BatchVideoAnalysisTask          `json:"analysisTask,omitempty"`
 	MaterialBatches []BatchVideoMaterialBatchView    `json:"materialBatches"`
 	SellingPoints   []model.BatchVideoSellingPoint   `json:"sellingPoints"`
 	ReferenceAssets []model.BatchVideoReferenceAsset `json:"referenceAssets"`
@@ -209,16 +231,37 @@ type BatchVideoProjectDetail struct {
 	Validation      BatchVideoValidationState        `json:"validation"`
 }
 
+// BatchVideoAnalysisTask 只暴露用户可见的分析任务进度，不把任务正文或上游标识带给前端。
+type BatchVideoAnalysisTask struct {
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	Stage      string `json:"stage"`
+	Progress   int    `json:"progress"`
+	Error      string `json:"error"`
+	AssetID    string `json:"assetId,omitempty"`
+	AssetTitle string `json:"assetTitle,omitempty"`
+	Total      int    `json:"total"`
+	Done       int    `json:"done"`
+	Failed     int    `json:"failed"`
+	// Running 是当前并行分析中的图片数量，便于前端显示并发进度。
+	Running     int        `json:"running"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	StartedAt   *time.Time `json:"startedAt,omitempty"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+}
+
 type BatchVideoProjectCounts struct {
 	CreativeTotal  int64 `json:"creativeTotal"`
 	Approved       int64 `json:"approved"`
 	PendingReview  int64 `json:"pendingReview"`
 	Rejected       int64 `json:"rejected"`
 	JobsTotal      int64 `json:"jobsTotal"`
+	Submitted      int64 `json:"submitted"`
 	Waiting        int64 `json:"waiting"`
 	Running        int64 `json:"running"`
 	Succeeded      int64 `json:"succeeded"`
 	Failed         int64 `json:"failed"`
+	Cancelled      int64 `json:"cancelled"`
 	Attempts       int64 `json:"attempts"`
 	RetrySucceeded int64 `json:"retrySucceeded"`
 	RetryFailed    int64 `json:"retryFailed"`
@@ -235,14 +278,13 @@ func (s *Service) CreateBatchVideoProject(userID string, input CreateBatchVideoP
 	if name == "" {
 		return nil, BadAuthRequest("请填写项目名称")
 	}
-	if strings.TrimSpace(input.ProductName) == "" {
-		return nil, BadAuthRequest("请填写产品名称")
-	}
-	if len(input.Materials) == 0 && len(input.Documents) == 0 {
-		return nil, BadAuthRequest("请上传素材图片、视频或卖点文档")
-	}
-	if err := s.validateBatchVideoInputs(userID, input.Materials, input.Documents); err != nil {
-		return nil, err
+	hasSource := len(input.Materials) > 0 || len(input.Documents) > 0
+	if hasSource {
+		if err := s.validateBatchVideoInputs(userID, input.Materials, input.Documents); err != nil {
+			return nil, err
+		}
+		input.Materials = uniqueBatchVideoMaterials(input.Materials)
+		sortBatchVideoMaterials(input.Materials)
 	}
 	settings := input.Settings
 	if settings.DurationSeconds <= 0 {
@@ -285,12 +327,18 @@ func (s *Service) CreateBatchVideoProject(userID string, input CreateBatchVideoP
 	if err := s.repo.CreateBatchVideoProject(project); err != nil {
 		return nil, err
 	}
-	batch, err := s.createMaterialBatch(userID, project.ID, 1, "首批素材", input.Materials, input.Documents, "draft")
-	if err != nil {
-		return nil, err
+	batchID := ""
+	if hasSource {
+		batch, err := s.createMaterialBatch(userID, project.ID, 1, "首批素材", input.Materials, input.Documents, "draft")
+		if err != nil {
+			return nil, err
+		}
+		batchID = batch.ID
 	}
-	if err := s.createSellingPoints(project, batch.ID, input.SellingPoints, input.Materials, input.Documents); err != nil {
-		return nil, err
+	if batchID != "" || len(input.SellingPoints) > 0 {
+		if err := s.createSellingPoints(project, batchID, input.SellingPoints, input.Materials, input.Documents); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.createReferenceAssetsFromMaterials(project, input.Materials); err != nil {
 		return nil, err
@@ -491,6 +539,67 @@ func (s *Service) batchVideoReferencePoolUsage(project *model.BatchVideoProject,
 	return added, len(assets) + added, nil
 }
 
+// uniqueBatchVideoMaterials 去掉同一批次里重复选择的资源，避免删除和 React 列表只处理第一条。
+func uniqueBatchVideoMaterials(materials []BatchVideoMaterialInput) []BatchVideoMaterialInput {
+	seen := make(map[string]bool, len(materials))
+	result := make([]BatchVideoMaterialInput, 0, len(materials))
+	for _, material := range materials {
+		key := material.Kind + "\x00" + material.ResourceID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, material)
+	}
+	return result
+}
+
+// sortBatchVideoMaterials 将纯数字命名的图片按数值升序重排（1、2、10 而不是 1、10、2）；
+// 只替换数字命名占用的位置，非数字命名和视频保持原有相对顺序。
+func sortBatchVideoMaterials(materials []BatchVideoMaterialInput) {
+	indexes := make([]int, 0, len(materials))
+	for index := range materials {
+		if materials[index].Kind != "image" {
+			continue
+		}
+		if _, ok := batchVideoNumericTitle(materials[index].Title); ok {
+			indexes = append(indexes, index)
+		}
+	}
+	if len(indexes) < 2 {
+		return
+	}
+	ordered := make([]BatchVideoMaterialInput, len(indexes))
+	for position, index := range indexes {
+		ordered[position] = materials[index]
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		left, _ := batchVideoNumericTitle(ordered[i].Title)
+		right, _ := batchVideoNumericTitle(ordered[j].Title)
+		return left < right
+	})
+	for position, index := range indexes {
+		materials[index] = ordered[position]
+	}
+}
+
+func batchVideoNumericTitle(title string) (int, bool) {
+	value := strings.TrimSpace(title)
+	if value == "" {
+		return 0, false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return 0, false
+		}
+	}
+	number, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	return number, true
+}
+
 func (s *Service) AddBatchVideoMaterialBatch(userID, projectID string, label string, materials []BatchVideoMaterialInput, documents []BatchVideoDocumentInput) (*BatchVideoMaterialBatchView, error) {
 	project, err := s.repo.BatchVideoProjectForUser(userID, projectID)
 	if err != nil {
@@ -502,6 +611,7 @@ func (s *Service) AddBatchVideoMaterialBatch(userID, projectID string, label str
 	if err := s.validateBatchVideoInputs(userID, materials, documents); err != nil {
 		return nil, err
 	}
+	materials = uniqueBatchVideoMaterials(materials)
 	next, err := s.repo.NextBatchVideoMaterialBatchNo(project.ID)
 	if err != nil {
 		return nil, err
@@ -524,9 +634,12 @@ func (s *Service) AddBatchVideoMaterialBatch(userID, projectID string, label str
 	if totalRefs > poolLimit {
 		return nil, BadAuthRequest(fmt.Sprintf("当前阶段参考图池最多 %d 张，新增后会达到 %d 张", poolLimit, totalRefs))
 	}
-	if strings.TrimSpace(label) == "" {
-		label = fmt.Sprintf("素材批次 %d", next)
+	if trimmed := strings.TrimSpace(label); trimmed != "" {
+		label = trimmed
+	} else {
+		label = fmt.Sprintf("%s 素材批次 %d", time.Now().Format("2006-01-02"), next)
 	}
+	sortBatchVideoMaterials(materials)
 	batch, err := s.createMaterialBatch(userID, project.ID, next, label, materials, documents, "ready")
 	if err != nil {
 		return nil, err
@@ -546,12 +659,12 @@ func (s *Service) AddBatchVideoMaterialBatch(userID, projectID string, label str
 	}, nil
 }
 
-func (s *Service) AnalyzeBatchVideoProject(userID, projectID string) (*BatchVideoProjectDetail, error) {
+func (s *Service) AnalyzeBatchVideoProject(userID, projectID, scope string) (*BatchVideoProjectDetail, error) {
 	project, err := s.repo.BatchVideoProjectForUser(userID, projectID)
 	if err != nil {
 		return nil, err
 	}
-	if project.AnalysisStatus == "queued" || project.AnalysisStatus == "running" {
+	if batchVideoAnalysisActive(project.AnalysisStatus) {
 		return s.BatchVideoProjectDetail(userID, projectID)
 	}
 	batches, err := s.repo.BatchVideoMaterialBatches(projectID)
@@ -567,7 +680,140 @@ func (s *Service) AnalyzeBatchVideoProject(userID, projectID string) (*BatchVide
 			documents = append(documents, payload.Documents...)
 		}
 	}
-	if _, err := s.startBatchVideoAnalysis(userID, project, materials, documents); err != nil {
+	analysisScope, err := normalizeBatchVideoAnalysisScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.startBatchVideoAnalysis(userID, project, materials, documents, analysisScope); err != nil {
+		return nil, err
+	}
+	return s.BatchVideoProjectDetail(userID, projectID)
+}
+
+// ContinueBatchVideoAnalysis 在单张失败后跳过该图片，继续补位分析剩余图片。
+func (s *Service) ContinueBatchVideoAnalysis(userID, projectID string) (*BatchVideoProjectDetail, error) {
+	project, err := s.repo.BatchVideoProjectForUser(userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if project.AnalysisStatus != batchVideoAnalysisAwaitingDecision {
+		return nil, BadAuthRequest("当前没有等待确认的分析失败")
+	}
+	if err := s.repo.UpdateBatchVideoProject(userID, projectID, map[string]any{
+		"analysis_status":           "running",
+		"analysis_error":            "",
+		"analysis_current_asset_id": "",
+		"stage":                     "analyzing",
+		"status":                    "running",
+	}); err != nil {
+		return nil, err
+	}
+	project.AnalysisStatus = "running"
+	materials, documents := s.batchVideoAnalysisInputs(projectID)
+	if err := s.dispatchBatchVideoAssetAnalysis(project, materials, documents); err != nil {
+		return nil, err
+	}
+	return s.BatchVideoProjectDetail(userID, projectID)
+}
+
+// cancelBatchVideoAssetAnalysisTasks 取消并行分析中所有在途任务并标记对应素材；
+// 纯文档项目取消项目自身任务。返回实际取消的任务数。
+func (s *Service) cancelBatchVideoAssetAnalysisTasks(ctx context.Context, userID string, project *model.BatchVideoProject) (int, error) {
+	uploads, err := s.batchVideoAnalysisAssets(project.ID)
+	if err != nil {
+		return 0, err
+	}
+	cancelled := 0
+	cancelledTasks := map[string]bool{}
+	for index := range uploads {
+		asset := &uploads[index]
+		if asset.AnalysisStatus != "queued" && asset.AnalysisStatus != "running" {
+			continue
+		}
+		if strings.TrimSpace(asset.AnalysisTaskID) != "" {
+			_, _ = s.taskLifecycle().cancelTaskWithIntent(ctx, userID, asset.AnalysisTaskID, model.TaskCancellationIntent{
+				Source:  model.TaskCancellationParentCancelled,
+				ActorID: userID,
+			})
+			cancelledTasks[asset.AnalysisTaskID] = true
+		}
+		if err := s.updateBatchVideoAssetAnalysis(userID, asset.ID, map[string]any{
+			"analysis_status": "cancelled",
+			"analysis_error":  "分析已中止，可重新分析",
+		}); err != nil {
+			return cancelled, err
+		}
+		cancelled++
+	}
+	// 项目主任务用于纯文档分析和旧状态兜底；图片项目已按素材任务取消，避免重复取消。
+	if taskID := strings.TrimSpace(project.AnalysisTaskID); taskID != "" && !cancelledTasks[taskID] {
+		if _, err := s.taskLifecycle().cancelTaskWithIntent(ctx, userID, taskID, model.TaskCancellationIntent{
+			Source:  model.TaskCancellationParentCancelled,
+			ActorID: userID,
+		}); err == nil {
+			cancelled++
+		}
+	}
+	return cancelled, nil
+}
+
+// CancelBatchVideoAnalysis 中止当前分析任务。并行分析会取消所有在途图片任务。
+func (s *Service) CancelBatchVideoAnalysis(ctx context.Context, userID, projectID string) (*BatchVideoProjectDetail, error) {
+	project, err := s.repo.BatchVideoProjectForUser(userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	awaiting := project.AnalysisStatus == batchVideoAnalysisAwaitingDecision
+	if !awaiting && project.AnalysisStatus != "queued" && project.AnalysisStatus != "running" {
+		return nil, BadAuthRequest("当前没有可中止的分析任务")
+	}
+	if _, err := s.cancelBatchVideoAssetAnalysisTasks(ctx, userID, project); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateBatchVideoProject(userID, projectID, map[string]any{
+		"analysis_status":           "cancelled",
+		"analysis_error":            "分析已中止，可重新分析",
+		"analysis_current_asset_id": "",
+		"stage":                     "draft",
+		"status":                    "ready",
+	}); err != nil {
+		return nil, err
+	}
+	return s.BatchVideoProjectDetail(userID, projectID)
+}
+
+// CancelBatchVideoPlanning 中止所有进行中的策划轮次；已完成的轮次和创意保留。
+func (s *Service) CancelBatchVideoPlanning(ctx context.Context, userID, projectID string) (*BatchVideoProjectDetail, error) {
+	if _, err := s.repo.BatchVideoProjectForUser(userID, projectID); err != nil {
+		return nil, err
+	}
+	rounds, err := s.repo.BatchVideoCreativeRounds(projectID)
+	if err != nil {
+		return nil, err
+	}
+	cancelled := 0
+	for _, round := range rounds {
+		if round.Status != "queued" && round.Status != "generating" && round.Status != "running" {
+			continue
+		}
+		if strings.TrimSpace(round.TaskID) != "" {
+			_, _ = s.taskLifecycle().cancelTaskWithIntent(ctx, userID, round.TaskID, model.TaskCancellationIntent{
+				Source:  model.TaskCancellationParentCancelled,
+				ActorID: userID,
+			})
+		}
+		if err := s.repo.UpdateBatchVideoCreativeRound(userID, round.ID, map[string]any{
+			"status": "failed",
+			"error":  "策划已中止，可重新生成",
+		}); err != nil {
+			return nil, err
+		}
+		cancelled++
+	}
+	if cancelled == 0 {
+		return nil, BadAuthRequest("当前没有进行中的策划任务")
+	}
+	if err := s.repo.UpdateBatchVideoProject(userID, projectID, map[string]any{"stage": "draft", "status": "ready"}); err != nil {
 		return nil, err
 	}
 	return s.BatchVideoProjectDetail(userID, projectID)
@@ -604,6 +850,7 @@ func (s *Service) UpdateBatchVideoProjectSettings(userID, projectID string, inpu
 	data := map[string]any{"settings_json": string(encoded)}
 	if project.AnalysisStatus != "queued" && project.AnalysisStatus != "running" {
 		data["analysis_status"] = "stale"
+		data["analysis_current_asset_id"] = ""
 	}
 	if err := s.repo.UpdateBatchVideoProject(userID, projectID, data); err != nil {
 		return nil, err
@@ -623,7 +870,20 @@ func (s *Service) BatchVideoProjectDetail(userID, projectID string) (*BatchVideo
 	for _, batch := range batches {
 		var payload batchVideoMaterialJSON
 		_ = json.Unmarshal([]byte(batch.MaterialJSON), &payload)
-		batchViews = append(batchViews, BatchVideoMaterialBatchView{BatchVideoMaterialBatch: batch, Materials: payload.Materials, Documents: payload.Documents})
+		materials := payload.Materials
+		if materials == nil {
+			materials = []BatchVideoMaterialInput{}
+		}
+		for index := range materials {
+			if materials[index].Tags == nil {
+				materials[index].Tags = []string{}
+			}
+		}
+		documents := payload.Documents
+		if documents == nil {
+			documents = []BatchVideoDocumentInput{}
+		}
+		batchViews = append(batchViews, BatchVideoMaterialBatchView{BatchVideoMaterialBatch: batch, Materials: materials, Documents: documents})
 	}
 	points, _ := s.repo.BatchVideoSellingPoints(projectID)
 	assets, _ := s.repo.BatchVideoReferenceAssets(projectID, "")
@@ -632,7 +892,7 @@ func (s *Service) BatchVideoProjectDetail(userID, projectID string) (*BatchVideo
 	jobs, _ := s.repo.BatchVideoJobs(projectID, "", 100, 0)
 	counts, _ := s.repo.BatchVideoCounts(projectID)
 	validation, _ := s.batchVideoValidationState(userID, projectID)
-	return &BatchVideoProjectDetail{
+	detail := &BatchVideoProjectDetail{
 		Project:         *project,
 		Settings:        settings,
 		MaterialBatches: batchViews,
@@ -643,7 +903,72 @@ func (s *Service) BatchVideoProjectDetail(userID, projectID string) (*BatchVideo
 		Jobs:            jobs,
 		Counts:          BatchVideoProjectCounts(counts),
 		Validation:      validation,
-	}, nil
+	}
+	if project.AnalysisTaskID != "" {
+		if task, err := s.repo.TaskForUser(userID, project.AnalysisTaskID); err == nil {
+			total, done, failed, running := 0, 0, 0, 0
+			assetTitle := ""
+			runningAssetID := ""
+			for index := range assets {
+				if assets[index].Source == "generated" || strings.TrimSpace(assets[index].ResourceID) == "" {
+					continue
+				}
+				total++
+				switch assets[index].AnalysisStatus {
+				case "succeeded":
+					done++
+				case "failed":
+					done++
+					failed++
+				case "queued", "running":
+					running++
+					if runningAssetID == "" {
+						runningAssetID = assets[index].ID
+						assetTitle = assets[index].Title
+					}
+				}
+				if runningAssetID == "" && assets[index].ID == project.AnalysisCurrentAssetID {
+					assetTitle = assets[index].Title
+				}
+			}
+			status := string(task.Status)
+			switch project.AnalysisStatus {
+			case batchVideoAnalysisAwaitingDecision:
+				status = batchVideoAnalysisAwaitingDecision
+			case "queued", "running":
+				status = project.AnalysisStatus
+			}
+			progress := task.Progress
+			if total > 0 {
+				progress = done * 100 / total
+			}
+			errorText := task.Error
+			if project.AnalysisStatus == batchVideoAnalysisAwaitingDecision {
+				errorText = project.AnalysisError
+			}
+			assetID := runningAssetID
+			if assetID == "" {
+				assetID = project.AnalysisCurrentAssetID
+			}
+			detail.AnalysisTask = &BatchVideoAnalysisTask{
+				ID:          task.ID,
+				Status:      status,
+				Stage:       task.Stage,
+				Progress:    progress,
+				Error:       errorText,
+				AssetID:     assetID,
+				AssetTitle:  assetTitle,
+				Total:       total,
+				Done:        done,
+				Failed:      failed,
+				Running:     running,
+				CreatedAt:   task.CreatedAt,
+				StartedAt:   task.StartedAt,
+				CompletedAt: task.CompletedAt,
+			}
+		}
+	}
+	return detail, nil
 }
 
 func repositoryBatchVideoFilter(projectID string, limit, offset int) repository.BatchVideoCreativeFilter {
@@ -678,7 +1003,13 @@ func (s *Service) ListBatchVideoCreatives(userID, projectID, roundID, reviewStat
 	return creatives, total, err
 }
 
-func (s *Service) ListBatchVideoJobs(userID, projectID, status string, page, pageSize int) ([]model.BatchVideoGenerationJob, error) {
+type BatchVideoGenerationJobView struct {
+	model.BatchVideoGenerationJob
+	Progress int    `json:"progress"`
+	Stage    string `json:"stage"`
+}
+
+func (s *Service) ListBatchVideoJobs(userID, projectID, status string, page, pageSize int) ([]BatchVideoGenerationJobView, error) {
 	if _, err := s.repo.BatchVideoProjectForUser(userID, projectID); err != nil {
 		return nil, err
 	}
@@ -688,7 +1019,34 @@ func (s *Service) ListBatchVideoJobs(userID, projectID, status string, page, pag
 	if page <= 0 {
 		page = 1
 	}
-	return s.repo.BatchVideoJobs(projectID, status, pageSize, (page-1)*pageSize)
+	jobs, err := s.repo.BatchVideoJobs(projectID, status, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, err
+	}
+	taskIDs := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		if job.CurrentTaskID != "" {
+			taskIDs = append(taskIDs, job.CurrentTaskID)
+		}
+	}
+	tasks, err := s.repo.TasksForUserIDs(userID, taskIDs)
+	if err != nil {
+		return nil, err
+	}
+	tasksByID := make(map[string]model.Task, len(tasks))
+	for _, task := range tasks {
+		tasksByID[task.ID] = task
+	}
+	views := make([]BatchVideoGenerationJobView, 0, len(jobs))
+	for _, job := range jobs {
+		view := BatchVideoGenerationJobView{BatchVideoGenerationJob: job}
+		if task, ok := tasksByID[job.CurrentTaskID]; ok {
+			view.Progress = task.Progress
+			view.Stage = task.Stage
+		}
+		views = append(views, view)
+	}
+	return views, nil
 }
 
 type GenerateBatchVideoCreativesInput struct {
@@ -700,6 +1058,7 @@ type GenerateBatchVideoCreativesInput struct {
 type BatchVideoCreativeRoundResult struct {
 	Round      model.BatchVideoCreativeRound `json:"round"`
 	Rounds     int                           `json:"rounds"`
+	RoundIDs   []string                      `json:"roundIds"`
 	Created    int                           `json:"created"`
 	Mode       string                        `json:"mode"`
 	MatchCount int                           `json:"matchCount"`
@@ -782,6 +1141,7 @@ func (s *Service) GenerateBatchVideoCreatives(userID, projectID string, input Ge
 	const planningChunkSize = 50
 	remaining := input.Count
 	rounds := make([]*model.BatchVideoCreativeRound, 0, (input.Count+planningChunkSize-1)/planningChunkSize)
+	roundIDs := make([]string, 0, cap(rounds))
 	for index := 0; remaining > 0; index++ {
 		chunk := planningChunkSize
 		if remaining < chunk {
@@ -810,13 +1170,14 @@ func (s *Service) GenerateBatchVideoCreatives(userID, projectID string, input Ge
 			return nil, err
 		}
 		rounds = append(rounds, round)
+		roundIDs = append(roundIDs, round.ID)
 	}
 	stage := "standard_planning"
 	if mode == "mass" {
 		stage = "mass_planning"
 	}
 	_ = s.repo.UpdateBatchVideoProject(userID, projectID, map[string]any{"stage": stage, "status": "running"})
-	result := BatchVideoCreativeRoundResult{Rounds: len(rounds), Created: 0, Mode: mode, MatchCount: 0}
+	result := BatchVideoCreativeRoundResult{Rounds: len(rounds), RoundIDs: roundIDs, Created: 0, Mode: mode, MatchCount: 0}
 	if len(rounds) > 0 {
 		result.Round = *rounds[0]
 	}
@@ -1324,6 +1685,7 @@ type BatchVideoSubmitModel struct {
 	Model          string         `json:"model"`
 	LogicalModelID string         `json:"logicalModelId"`
 	ChannelModelID string         `json:"channelModelId"`
+	Priority       int            `json:"-"`
 	Config         map[string]any `json:"config"`
 }
 
@@ -1411,6 +1773,7 @@ type BatchVideoTaskCandidate struct {
 	Model          string         `json:"model"`
 	LogicalModelID string         `json:"logicalModelId"`
 	ChannelModelID string         `json:"channelModelId"`
+	Priority       int            `json:"priority,omitempty"`
 	Config         map[string]any `json:"config"`
 }
 
@@ -1663,10 +2026,55 @@ func (s *Service) SubmitBatchVideoGeneration(userID, projectID string, input Bat
 	if prepared.generationMode == "mass" {
 		stage = "mass_generating"
 	}
-	if err := s.repo.UpdateBatchVideoProject(userID, projectID, map[string]any{"stage": stage, "status": "running"}); err != nil {
+	// 提交只落库，不进入调度队列；用户点击开始或定时到点后才释放给 dispatcher。
+	if err := s.repo.UpdateBatchVideoProject(userID, projectID, map[string]any{
+		"stage":              stage,
+		"status":             "submitted",
+		"scheduled_start_at": nil,
+	}); err != nil {
 		return 0, err
 	}
 	return len(prepared.jobs), nil
+}
+
+// StartBatchVideoGeneration 释放已提交的任务；scheduledAt 为空表示立即开始。
+func (s *Service) StartBatchVideoGeneration(userID, projectID string, scheduledAt *time.Time) (int, error) {
+	project, err := s.repo.BatchVideoProjectForUser(userID, projectID)
+	if err != nil {
+		return 0, err
+	}
+	if project.Status == "paused" {
+		return 0, BadAuthRequest("项目已暂停，请先继续调度再开始生成")
+	}
+	pending, err := s.repo.CountSubmittedBatchVideoJobs(userID, projectID)
+	if err != nil {
+		return 0, err
+	}
+	if pending == 0 {
+		return 0, BadAuthRequest("没有等待开始的生成任务")
+	}
+	if scheduledAt != nil {
+		value := scheduledAt.UTC()
+		if !value.After(time.Now()) {
+			return 0, BadAuthRequest("定时开始时间必须晚于当前时间")
+		}
+		_, started, err := s.repo.StartBatchVideoProject(userID, projectID, &value)
+		if err != nil {
+			return 0, err
+		}
+		if !started {
+			return 0, BadAuthRequest("项目已暂停，请先继续调度再开始生成")
+		}
+		return int(pending), nil
+	}
+	released, started, err := s.repo.StartBatchVideoProject(userID, projectID, nil)
+	if err != nil {
+		return 0, err
+	}
+	if !started {
+		return 0, BadAuthRequest("项目已暂停，请先继续调度再开始生成")
+	}
+	return int(released), nil
 }
 
 func candidateFromSubmit(model BatchVideoSubmitModel) BatchVideoTaskCandidate {
@@ -1675,6 +2083,7 @@ func candidateFromSubmit(model BatchVideoSubmitModel) BatchVideoTaskCandidate {
 		Model:          model.Model,
 		LogicalModelID: model.LogicalModelID,
 		ChannelModelID: model.ChannelModelID,
+		Priority:       batchVideoModelPriority(model.Priority),
 		Config:         model.Config,
 	}
 }
@@ -1723,12 +2132,17 @@ func (s *Service) prepareBatchVideoModels(selected []BatchVideoSubmitModel, crea
 			ModelID:        channelModel.ID,
 			Model:          channelModel.ModelKey,
 			ChannelModelID: channelModel.ID,
+			Priority:       effectiveModelPriority(config),
 			Config: map[string]any{
 				"channelId": channelModel.ChannelID,
 				"model":     channelModel.ModelKey,
 			},
 		})
 	}
+	// 单模型模式的候选顺序和调度队列都按优先级从高到低，用户选择顺序不作数。
+	sort.SliceStable(prepared, func(i, j int) bool {
+		return prepared[i].Priority > prepared[j].Priority
+	})
 	if creativeCount > maxItems {
 		return nil, BadAuthRequest(fmt.Sprintf("所选模型单次最多提交 %d 条创意，请分批提交", maxItems))
 	}
@@ -1742,6 +2156,7 @@ type BatchVideoModelOption struct {
 	Model          string `json:"model"`
 	DisplayName    string `json:"displayName"`
 	MaxItems       int    `json:"maxItems"`
+	Priority       int    `json:"priority"`
 	SortOrder      int    `json:"sortOrder"`
 }
 
@@ -1767,9 +2182,19 @@ func (s *Service) ListBatchVideoModels() ([]BatchVideoModelOption, error) {
 			Model:          channelModel.ModelKey,
 			DisplayName:    firstNonEmpty(channelModel.DisplayName, channelModel.ModelKey),
 			MaxItems:       maxItems,
+			Priority:       effectiveModelPriority(config),
 			SortOrder:      channelModel.SortOrder,
 		})
 	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Priority != result[j].Priority {
+			return result[i].Priority > result[j].Priority
+		}
+		if result[i].SortOrder != result[j].SortOrder {
+			return result[i].SortOrder < result[j].SortOrder
+		}
+		return result[i].DisplayName < result[j].DisplayName
+	})
 	return result, nil
 }
 
@@ -1777,11 +2202,13 @@ func newBatchVideoJob(project *model.BatchVideoProject, creative model.BatchVide
 	modelID := ""
 	channelModelID := ""
 	logicalModelID := ""
+	priority := defaultBatchVideoModelPriority
 	if len(template.Candidates) > 0 {
 		candidate := template.Candidates[0]
 		modelID = candidate.ModelID
 		channelModelID = candidate.ChannelModelID
 		logicalModelID = candidate.LogicalModelID
+		priority = batchVideoModelPriority(candidate.Priority)
 	}
 	return model.BatchVideoGenerationJob{
 		ID:               newID(),
@@ -1792,7 +2219,8 @@ func newBatchVideoJob(project *model.BatchVideoProject, creative model.BatchVide
 		ChannelModelID:   channelModelID,
 		LogicalModelID:   logicalModelID,
 		Mode:             mode,
-		Status:           "waiting",
+		Status:           "submitted",
+		ModelPriority:    priority,
 		TaskTemplateJSON: batchVideoMustJSON(template),
 	}
 }
@@ -1831,10 +2259,14 @@ func (s *Service) RetryBatchVideoJob(userID, projectID, jobID string) (*model.Ba
 		"model_id":            first.ModelID,
 		"channel_model_id":    first.ChannelModelID,
 		"logical_model_id":    first.LogicalModelID,
+		"model_priority":      batchVideoModelPriority(first.Priority),
 		"current_task_id":     currentTaskID,
 		"success_resource_id": "",
 		"last_error":          "",
 	}); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateBatchVideoProjectUnlessPaused(userID, projectID, map[string]any{"status": "running"}); err != nil {
 		return nil, err
 	}
 	return s.repo.BatchVideoJobForUser(userID, jobID)
@@ -1885,7 +2317,21 @@ func (s *Service) CancelPendingBatchVideoJobs(userID, projectID string) (int64, 
 	if _, err := s.repo.BatchVideoProjectForUser(userID, projectID); err != nil {
 		return 0, err
 	}
-	return s.repo.CancelWaitingBatchVideoJobs(userID, projectID)
+	count, err := s.repo.CancelUnstartedBatchVideoJobs(userID, projectID)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.repo.UpdateBatchVideoProject(userID, projectID, map[string]any{"scheduled_start_at": nil}); err != nil {
+		return 0, err
+	}
+	active, err := s.repo.CountActiveBatchVideoJobs(userID, projectID)
+	if err != nil {
+		return 0, err
+	}
+	if active == 0 {
+		_ = s.repo.UpdateBatchVideoProjectUnlessPaused(userID, projectID, map[string]any{"status": "ready"})
+	}
+	return count, nil
 }
 
 func (s *Service) PauseBatchVideoProject(userID, projectID string) error {
@@ -1908,6 +2354,44 @@ func (s *Service) BatchVideoStats(userID, projectID string) (BatchVideoProjectCo
 	}
 	counts, err := s.repo.BatchVideoCounts(projectID)
 	return BatchVideoProjectCounts(counts), err
+}
+
+func (s *Service) DeleteBatchVideoProject(userID, projectID string) error {
+	project, err := s.repo.BatchVideoProjectForUser(userID, projectID)
+	if err != nil {
+		return err
+	}
+	activeJobs, err := s.repo.CountActiveBatchVideoJobs(userID, projectID)
+	if err != nil {
+		return err
+	}
+	activeRounds, err := s.repo.CountActiveBatchVideoRounds(userID, projectID)
+	if err != nil {
+		return err
+	}
+	analysisRunning := batchVideoAnalysisActive(project.AnalysisStatus)
+	if !analysisRunning && project.AnalysisTaskID != "" {
+		if task, err := s.repo.TaskForUser(userID, project.AnalysisTaskID); err == nil &&
+			(task.Status == model.TaskStatusQueued || task.Status == model.TaskStatusRunning) {
+			analysisRunning = true
+		}
+	}
+	generatingAssets, err := s.repo.BatchVideoReferenceAssets(projectID, "generating")
+	if err != nil {
+		return err
+	}
+	if activeJobs > 0 || activeRounds > 0 || analysisRunning || len(generatingAssets) > 0 {
+		return BadAuthRequest("项目仍有进行中的分析、策划、参考图生成或视频生成任务；请先取消未开始的任务，待运行中的任务结束后再删除")
+	}
+	// 先收集资源，级联删除业务记录后再清理文件；仍被其他项目引用的资源会被保留。
+	resourceIDs := s.batchVideoProjectResourceIDs(projectID)
+	if err := s.repo.DeleteBatchVideoProject(userID, projectID); err != nil {
+		return err
+	}
+	if err := s.cleanupBatchVideoResources(userID, resourceIDs); err != nil {
+		_ = s.log(userID, "", "warn", "删除项目后清理素材文件失败", err.Error())
+	}
+	return nil
 }
 
 func (s *Service) RunBatchVideoDispatcher(ctx context.Context) {
@@ -1934,10 +2418,26 @@ func (s *Service) ProcessBatchVideoQueue(ctx context.Context) error {
 	if err := s.reconcileBatchVideoReferenceGeneration(); err != nil {
 		return err
 	}
+	if err := s.releaseScheduledBatchVideoGeneration(); err != nil {
+		return err
+	}
 	if err := s.dispatchWaitingBatchVideoJobs(ctx); err != nil {
 		return err
 	}
 	return s.reconcileBatchVideoJobs(ctx)
+}
+
+func (s *Service) releaseScheduledBatchVideoGeneration() error {
+	projects, err := s.repo.DueScheduledBatchVideoProjects(time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if _, err := s.repo.ReleaseScheduledBatchVideoProject(project.UserID, project.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) dispatchWaitingBatchVideoJobs(ctx context.Context) error {
@@ -2000,6 +2500,7 @@ func (s *Service) dispatchWaitingBatchVideoJobs(ctx context.Context) error {
 					"model_id":         template.Candidates[candidateIndex+1].ModelID,
 					"channel_model_id": template.Candidates[candidateIndex+1].ChannelModelID,
 					"logical_model_id": template.Candidates[candidateIndex+1].LogicalModelID,
+					"model_priority":   batchVideoModelPriority(template.Candidates[candidateIndex+1].Priority),
 					"last_error":       message,
 				})
 			} else {
@@ -2171,6 +2672,7 @@ func (s *Service) reconcileBatchVideoJobs(ctx context.Context) error {
 					"model_id":         template.Candidates[next].ModelID,
 					"channel_model_id": template.Candidates[next].ChannelModelID,
 					"logical_model_id": template.Candidates[next].LogicalModelID,
+					"model_priority":   batchVideoModelPriority(template.Candidates[next].Priority),
 					"last_error":       errorText,
 				})
 			} else {

@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { App, Button, Segmented, Tag } from "antd";
-import { ChevronRight, FlaskConical, Settings2 } from "lucide-react";
+import { ChevronRight, FlaskConical, Settings2, Square } from "lucide-react";
 
 import { ModelEditorModal } from "@/components/model-editor-modal";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
 import { testChannelModelConnection } from "@/lib/model-connection-test";
 import { ModelCapabilityEditor } from "@/components/model-capability-editor";
 import { type ModelCapabilityChoice } from "@/components/model-protocol-picker";
-import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultModelCapabilityConfig, modelPriorityOf } from "@/lib/model-capabilities";
 import { modelProtocolCapability, modelProtocolDefinition, type ModelProtocol, type ModelProtocolDefinition } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
 import { modelOptionName, type ModelChannel } from "@/stores/use-config-store";
@@ -17,6 +17,7 @@ type ModelCost = NonNullable<ModelChannel["modelCosts"]>[number];
 export function ChannelModelSettings({ channel, onChange }: { channel: ModelChannel; onChange: (costs: ModelCost[]) => void }) {
     const { message } = App.useApp();
     const [testingModel, setTestingModel] = useState("");
+    const testControllerRef = useRef<AbortController | null>(null);
     const [editorTab, setEditorTab] = useState("protocol");
     const [protocolLoading, setProtocolLoading] = useState(true);
     const [protocolError, setProtocolError] = useState("");
@@ -49,13 +50,20 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
     };
 
     const testModel = async (model: string, capability: ModelCost["capability"], protocol: ModelProtocol) => {
+        const controller = new AbortController();
+        testControllerRef.current = controller;
         setTestingModel(model);
         try {
-            const detail = await testChannelModelConnection(channel, model, capability, protocol);
+            const detail = await testChannelModelConnection(channel, model, capability, protocol, controller.signal);
             message.success(`模型测试通过：${detail}`);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "模型测试失败");
+            if (controller.signal.aborted) {
+                message.info("模型测试已中止");
+            } else {
+                message.error(error instanceof Error ? error.message : "模型测试失败");
+            }
         } finally {
+            if (testControllerRef.current === controller) testControllerRef.current = null;
             setTestingModel("");
         }
     };
@@ -94,6 +102,7 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
                                     <Tag className="mr-0 text-[var(--fs-tiny)]" bordered={false}>
                                         {capabilityLabel(capability)}
                                     </Tag>
+                                    <Tag className="mr-0 text-[var(--fs-tiny)]" bordered={false}>优先级 {modelPriorityOf(cost?.capabilityConfig)}</Tag>
                                     <span className="truncate font-mono text-[var(--fs-tiny)] text-foreground/40" title={modelProtocolDefinition(protocol, availableProtocols)?.create}>
                                         {modelProtocolDefinition(protocol, availableProtocols)?.create || "待配置请求协议"}
                                     </span>
@@ -118,14 +127,19 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
                     <div className="model-editor-footer">
                         <span className="text-xs text-foreground/50">更改实时保存到云端渠道配置</span>
                         <div className="model-editor-footer-actions">
-                            <Button
-                                icon={<FlaskConical className="size-4" />}
-                                loading={Boolean(testingModel)}
-                                disabled={!activeProtocol || protocolLoading || Boolean(protocolError)}
-                                onClick={() => { if (activeModel && activeProtocol) void testModel(activeModel, activeCapability, activeProtocol); }}
-                            >
-                                测试模型
-                            </Button>
+                            {testingModel ? (
+                                <Button danger icon={<Square className="size-4" />} onClick={() => testControllerRef.current?.abort()}>
+                                    中止测试
+                                </Button>
+                            ) : (
+                                <Button
+                                    icon={<FlaskConical className="size-4" />}
+                                    disabled={!activeProtocol || protocolLoading || Boolean(protocolError)}
+                                    onClick={() => { if (activeModel && activeProtocol) void testModel(activeModel, activeCapability, activeProtocol); }}
+                                >
+                                    测试模型
+                                </Button>
+                            )}
                             <Button type="primary" disabled={Boolean(testingModel)} onClick={() => setActiveModel(null)}>完成</Button>
                         </div>
                     </div>
@@ -148,7 +162,10 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
                                             capability: nextCapability,
                                             billingMode: "fixed_request",
                                             unitPriceMicrocredits: 0,
-                                            capabilityConfig: nextCapability === "text" || nextCapability === "image" || nextCapability === "video" ? defaultModelCapabilityConfig(nextProtocol, activeModel) : undefined,
+                                            capabilityConfig: {
+                                                ...(nextCapability === "audio" ? { version: 1 } : defaultModelCapabilityConfig(nextProtocol, activeModel)),
+                                                priority: modelPriorityOf(activeModelCost?.capabilityConfig),
+                                            },
                                         });
                                     }}
                                 />
@@ -165,7 +182,10 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
                                         protocol: nextProtocol,
                                         billingMode: "fixed_request",
                                         unitPriceMicrocredits: 0,
-                                        capabilityConfig: activeCapability === "text" || activeCapability === "image" || activeCapability === "video" ? defaultModelCapabilityConfig(nextProtocol, activeModel) : undefined,
+                                        capabilityConfig: {
+                                            ...(activeCapability === "audio" ? { version: 1 } : defaultModelCapabilityConfig(nextProtocol, activeModel)),
+                                            priority: modelPriorityOf(activeModelCost?.capabilityConfig),
+                                        },
                                     })}
                                 />
                             </section>
@@ -174,7 +194,13 @@ export function ChannelModelSettings({ channel, onChange }: { channel: ModelChan
                     {
                         key: "capabilities",
                         label: "能力与参数",
-                        children: <div inert={Boolean(testingModel)}>
+                        children: <div className="space-y-4" inert={Boolean(testingModel)}>
+                            <ModelCapabilityEditor
+                                capability={activeCapability}
+                                section="priority"
+                                value={activeModelCost?.capabilityConfig}
+                                onChange={(capabilityConfig) => updateCost(activeModel, { capabilityConfig })}
+                            />
                             {activeCapability === "text" || activeCapability === "image" || activeCapability === "video" ? (
                                 <ModelCapabilityEditor
                                     capability={activeCapability}

@@ -2461,6 +2461,34 @@ func TestProtocolRequestPreservesVideoImageIDsAndRoles(t *testing.T) {
 	}
 }
 
+func TestProtocolRequestSendsStreamFlagForDeclarativeText(t *testing.T) {
+	request := protocolRequestFromInput(canvasGenerationInput{
+		Mode:       "text",
+		StreamText: true,
+		Config:     providerConfig{InterfaceType: "a6api-chat", Model: "model-a"},
+	})
+	if request.ProviderOptions["a6api-chat"]["stream"] != true || request.Extra["stream"] != true {
+		t.Fatalf("stream flag missing: providerOptions=%#v extra=%#v", request.ProviderOptions, request.Extra)
+	}
+	blocked := protocolRequestFromInput(canvasGenerationInput{
+		Mode:       "text",
+		StreamText: false,
+		Config:     providerConfig{InterfaceType: "a6api-chat", Model: "model-a"},
+	})
+	if blocked.ProviderOptions["a6api-chat"] != nil || blocked.Extra["stream"] != nil {
+		t.Fatalf("non-stream request leaked stream flag: providerOptions=%#v extra=%#v", blocked.ProviderOptions, blocked.Extra)
+	}
+	explicit := protocolRequestFromInput(canvasGenerationInput{
+		Mode:       "text",
+		StreamText: true,
+		Config:     providerConfig{InterfaceType: "a6api-chat", Model: "model-a"},
+		Metadata:   map[string]any{"providerOptions": map[string]any{"a6api-chat": map[string]any{"stream": false}}},
+	})
+	if explicit.ProviderOptions["a6api-chat"]["stream"] != false {
+		t.Fatalf("explicit provider stream option was overwritten: %#v", explicit.ProviderOptions)
+	}
+}
+
 func TestProtocolRequestRestoresDeclaredVideoResolutionEnum(t *testing.T) {
 	tests := []struct {
 		name        string

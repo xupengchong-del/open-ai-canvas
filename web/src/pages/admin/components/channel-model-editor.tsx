@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Alert, App, AutoComplete, Button, Form, Input, Segmented, Switch, Tabs } from "antd";
 import { useAdminContext } from "../admin-context";
 import { AdminModal } from "@/pages/admin/ui/overlays";
-import { FlaskConical, Plus } from "lucide-react";
+import { FlaskConical, Plus, Square } from "lucide-react";
 import { ModelIconPicker } from "@/components/model-logo";
 import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
@@ -61,6 +61,7 @@ export function ChannelModelEditor({
     const [configurationChanged, setConfigurationChanged] = useState(false);
     const busyRef = useRef(false);
     const dirtyRef = useRef(false);
+    const testControllerRef = useRef<AbortController | null>(null);
     const modelCapability = Form.useWatch("capability", form);
     const modelProtocol = Form.useWatch("protocol", form);
     const modelKey = Form.useWatch("modelKey", form) || "";
@@ -128,8 +129,7 @@ export function ChannelModelEditor({
         const values = await validateEditor();
         if (!values) return;
         const upstreamModel = values.providerModelKey?.trim() || values.modelKey.trim();
-        const capabilityConfig =
-            values.capability === "text" || values.capability === "image" || values.capability === "video" ? normalizeModelCapabilityConfig(values.capabilityConfig || defaultModelCapabilityConfig(values.protocol, upstreamModel)) : undefined;
+        const capabilityConfig = normalizeModelCapabilityConfig(values.capabilityConfig || (values.capability === "audio" ? { version: 1 } : defaultModelCapabilityConfig(values.protocol, upstreamModel)));
         busyRef.current = true;
         setSaving(true);
         try {
@@ -169,8 +169,9 @@ export function ChannelModelEditor({
         const values = await validateEditor(["modelKey", "providerModelKey", "capability", "protocol", "capabilityConfig"]);
         if (!values) return;
         const upstreamModel = values.providerModelKey?.trim() || values.modelKey.trim();
-        const capabilityConfig =
-            values.capability === "text" || values.capability === "image" || values.capability === "video" ? normalizeModelCapabilityConfig(values.capabilityConfig || defaultModelCapabilityConfig(values.protocol, upstreamModel)) : undefined;
+        const capabilityConfig = normalizeModelCapabilityConfig(values.capabilityConfig || (values.capability === "audio" ? { version: 1 } : defaultModelCapabilityConfig(values.protocol, upstreamModel)));
+        const controller = new AbortController();
+        testControllerRef.current = controller;
         busyRef.current = true;
         setTesting(true);
         try {
@@ -180,14 +181,23 @@ export function ChannelModelEditor({
                 capability: values.capability,
                 protocol: values.protocol,
                 capabilityConfig,
-            });
+            }, controller.signal);
             message.success(`模型测试通过，耗时 ${(result.durationMs / 1000).toFixed(2)} 秒`);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "模型测试失败");
+            if (controller.signal.aborted) {
+                message.info("模型测试已中止");
+            } else {
+                message.error(error instanceof Error ? error.message : "模型测试失败");
+            }
         } finally {
+            if (testControllerRef.current === controller) testControllerRef.current = null;
             busyRef.current = false;
             setTesting(false);
         }
+    };
+
+    const abortModelTest = () => {
+        testControllerRef.current?.abort();
     };
 
     return (
@@ -228,14 +238,19 @@ export function ChannelModelEditor({
                         </div>
                     </div>
                     <div className="admin-model-editor-footer-primary">
-                        <Button
-                            icon={<FlaskConical className="size-4" />}
-                            loading={testing}
-                            disabled={saving || protocolLoading || Boolean(protocolError)}
-                            onClick={() => modal.confirm({ title: "测试模型连接？", content: "测试会向上游发送真实请求，可能产生供应商费用；不会保存当前修改。", okText: "开始测试", cancelText: "取消", onOk: testModel })}
-                        >
-                            测试模型
-                        </Button>
+                        {testing ? (
+                            <Button danger icon={<Square className="size-4" />} onClick={abortModelTest}>
+                                中止测试
+                            </Button>
+                        ) : (
+                            <Button
+                                icon={<FlaskConical className="size-4" />}
+                                disabled={saving || protocolLoading || Boolean(protocolError)}
+                                onClick={() => modal.confirm({ title: "测试模型连接？", content: "测试会向上游发送真实请求，可能产生供应商费用；不会保存当前修改。", okText: "开始测试", cancelText: "取消", onOk: testModel })}
+                            >
+                                测试模型
+                            </Button>
+                        )}
                         <Button disabled={busy} onClick={requestClose}>
                             取消
                         </Button>
@@ -371,6 +386,20 @@ export function ChannelModelEditor({
                             children: (
                                 <div className="admin-model-editor-tab-content">
                                     {configurationChanged && <Alert type="warning" showIcon title="能力或协议已变更" description="引用与参数已恢复为新协议默认值，旧规格条件已在切换能力时清除。价格与计费方式保留，请在保存前核对。" />}{" "}
+                                    <section className="admin-model-editor-section admin-model-editor-section-stacked">
+                                        <SectionHeading title="调用调度" description="所有能力通用；数值越大越优先，自动选择与批量调度按优先级从高到低。" />
+                                        <div className="admin-model-editor-section-content">
+                                            <ModelCapabilityEditor
+                                                capability={modelCapability}
+                                                section="priority"
+                                                value={capabilityConfig}
+                                                onChange={(next) => {
+                                                    dirtyRef.current = true;
+                                                    form.setFieldValue("capabilityConfig", next);
+                                                }}
+                                            />
+                                        </div>
+                                    </section>
                                     {modelCapability === "text" || modelCapability === "image" || modelCapability === "video" ? (
                                         <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-references">
                                             <SectionHeading title="引用与限制" description="按媒体类型纵向配置数量、大小、时长及通用约束。" />

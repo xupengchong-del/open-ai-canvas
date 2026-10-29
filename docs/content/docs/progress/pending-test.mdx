@@ -246,6 +246,7 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - [x] 真实百炼文生视频：通过分发插件构建请求，仅创建一次 4 秒、768P、16:9 任务，轮询成功并下载 819876 字节 MP4；上游 usage 返回 4 个计费秒、1344×768、1 个视频；下载文件的容器尺寸为 1344×768、总时长 4.459 秒。该验收不包含应用任务落库和账单结算。
 - [ ] 用户验收：仅首帧、仅尾帧、首尾帧、多模态参考、2K、水印、原任务恢复及应用内结果持久化与计价；媒体尺寸、编码、帧率、参考视频/音频总时长和上游错误边界仍需真实供应商验证。
 - 已知限制：设置页的用户自定义视频渠道「模型测试」仍使用旧前端视频请求入口，尚未接入声明式协议宿主；该入口不能作为本插件的连通性验收依据。
+- 已修复（2026-10-28）：管理端模型编辑器和设置页「测试模型」在请求长时间无响应时原先没有中止入口，弹窗也无法关闭。现在测试期间按钮变为「中止测试」，使用 AbortController 取消浏览器请求；管理端请求取消会通过 Gin 请求上下文中断上游调用，设置页请求把 signal 传给文本/图片/视频/音频测试入口。中止后恢复可编辑与可关闭状态。
 
 ## 画布多窗口光标与实时通知
 
@@ -3635,10 +3636,141 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 已实现：参考图池硬上限（标准/量产）和单轮新增上限；创意缺少参考图时可提交图片生成任务，完成后自动回填创意匹配。
 - 已实现（一致性修正轮）：仅文档（无图片）也可创建项目并分析，含图片时策划模型必须支持读图；后端不再要求手动文档名带 `.md`/`.txt` 后缀；标准轮创意数量全链路统一为 5–20 条（默认值、归一化、创建、策划生成、策划弹窗、后台设置），量产单轮/单项目上限 1000；新建向导改为“产品与素材 → 参数与模型 → 确认创建”，产品名必填并可选择参考图模型；创意详情抽屉支持编辑标题/钩子/文案/视频与图片提示词（`PATCH .../creatives/:creativeId`）和程序重新匹配参考图（`POST .../creatives/:creativeId/rematch`），已提交生成的创意禁止修改，保存后重置为待审核并阻断完全重复；策划拆轮改为每 50 条一轮；OpenAPI 与 HTTP API 文档已同步（含 preflight、cancel-pending、attempts 端点）。
 - 已验证（一致性修正轮）：`go test ./internal/app -run 'TestBatchVideo|TestDecodeBatchVideo' -count=1` 通过（含仅文档创建、空文档拒绝、创意编辑重置审核、已提交禁止编辑、跨项目拒绝、程序重新匹配等用例）；前端 `bun run build`（tsc + vite）通过。
+- 已修复（浏览器验收发现）：策划轮次在任务进入 running 后被写成 `running`，而协调查询只扫 `generating/queued`，导致任务已 succeeded 但创意永不落库。已把 `BatchVideoRoundsForPlanning` 纳入 `running`，并新增 `TestBatchVideoRoundsForPlanningIncludesRunningStatus`；修复后卡住的轮次自动结算为 reviewing 并产出 5 条创意。
+- 已验证（ego lite 真实路由，2026-10-27）：登录后侧栏独立入口与项目列表；新建页为单步创建，仅项目名称（必填）与产品名称（可选），空名称时“创建项目”禁用，创建后直接进入项目工作台；名称-only 项目为“资料准备”、不自动分析、无素材批次与卖点，之后在项目内追加文档并触发分析（任务创建成功；当前开发库唯一纯文本模型被上游拒绝，界面显示“分析失败/模型服务拒绝了请求”与重新分析）；项目设置中无图片时纯文本策划模型可选、含图片时才禁用并提示需读图；策划弹窗默认 5/提示 5–20/标准阶段上限 20；5 条创意由真实策划模型生成；创意抽屉展示文案/双提示词/结构化图片需求/匹配状态/生成历史，编辑保存提示“已保存并转为待审核”且数据库回到 pending，重新匹配按程序匹配（matched 60%），未匹配创意“通过”禁用；后台 `/admin/batch-video` 标准字段 min/max 5–20、量产 1000，提示正确。
+- 已验证（真实提交，用户授权）：临时开启 1 个视频模型批量授权后提交 1 条任务，任务落入服务端队列且离页/返回后仍在；上游失败原因为“服务器本地存储尚未配置服务器访问地址”（本机无公网基址、未开 OSS），失败状态、统计、尝试历史与“重试失败”展示正确，重试受计费核对保护拦截；验收后模型授权 JSON 已还原。
+- 已去重（2026-10-27）：页面级操作（返回/刷新/项目设置/追加素材/分析素材/生成创意/提交生成）只保留在顶部；创意页签仅保留全选待审、批量通过、批量驳回、全选本页已通过，作业页签仅保留暂停/继续、取消未开始项、重试全部失败；素材页签移除重复的“追加素材批次”并改为指向上方入口。勾选创意后在顶部“提交生成”选择“当前勾选”仍可用（弹窗显示“当前勾选（1 条）”）。
+- 已实现并验证（2026-10-27）：项目列表改为表格（项目/产品、阶段、创意、已通过、成功、失败、参数、更新时间、操作），操作列提供删除；删除需二次确认，后端校验项目归属并级联清理素材批次、卖点、参考图、创意、引用、任务、尝试与验收记录，存在进行中的分析/策划/生成任务时拒绝删除。ego lite 实测删除含 5 条创意与 1 个任务的项目后各表计数归零；Go 测试覆盖级联删除、进行中拦截和跨用户拒绝。
+- 已实现并验证（2026-10-27）：素材上传与分析合并为同一步“上传素材并分析”，工作流由 6 步减为 5 步；产品档案、素材批次、参考图库和卖点在同一页展示。追加素材成功后前端立即调用分析接口（不再弹“是否立即重新分析”确认框），分析失败时保留素材并提示原因；项目未选策划模型时，分析接口自动挑选可用文本模型（有图片优先支持读图的模型）并写回 `settings_json`。ego lite 实测：新建名称-only 项目 → 上传文档 → 页面直接进入“分析中”，任务自动创建且模型已写回；无视觉模型时追加图片提示“分析未能启动”，素材保留。Go 测试覆盖自动挑选视觉/纯文本模型、显式模型不被静默替换、视觉能力缺失，以及模型成功返回后写入产品档案、卖点和图片描述的成功路径；同时修复工作区默认 `Tag` 在黑字主题下背景退化为不透明黑色的问题。
+- 已实现并验证（2026-10-27）：追加素材时批次名称可选，留空由服务端生成“2026-10-27 素材批次 1”；图片文件名去掉扩展名后为纯数字时按数值升序保存（1、2、10），非数字命名与视频保持原相对顺序。前端上传器同步排序并在弹窗提示；后端在创建项目和追加批次时统一排序，API 直接调用也生效。Go 测试覆盖数字排序、非数字不变和留空标签；ego lite 实测按 10、2、1 顺序上传、留空名称，批次显示“2026-10-27 素材批次 1”，素材与参考图库均为 1、2、10，数据库 `material_json` 顺序一致。
+- 已实现并验证（2026-10-27，进度与删除）：
+  - 素材分析和创意策划新增进度弹窗：分析为前台逐张进度、完成前不可关闭，只能中止（后续已升级）；策划显示百分比、阶段和已运行时间，可“后台运行”或“中止任务”。分析中止后 `analysisStatus=cancelled`、素材和已生成卖点保留，策划中止后进行中轮次标记失败、已完成创意保留。生成任务列表新增本轮整体进度条，运行中任务显示动画进度。
+  - 素材支持删除单张、删除批次和清空全部：只清理未被创意引用、且不再被其他批次或项目使用的参考图和本地文件；删除后项目分析标记为 `stale` 并递增参考图池版本（涉及参考图时）；分析/策划/生成运行期间拒绝调整素材。项目删除同样会清理仅属于该项目的素材文件，跨项目共享的资源保留。
+  - 修复仅文档批次返回 `materials:null` 导致项目详情页崩溃的问题（详情统一返回空数组）；移除产品档案面板内与页面顶部重复的“重新分析”入口。
+  - 验证：新增 Go 测试覆盖单张/批次/清空删除、跨项目共享资源保留、分析中拦截、物理删除任务冻结存储位置；`go test ./internal/app -run 'TestBatchVideo|TestDeleteBatchVideo|TestClearBatchVideo|TestSortBatchVideo|TestAddBatchVideo'` 通过；前端 `bun run build`、`bun run lint`、`go vet` 通过。
+  - 审查修复：批量视频的已完成任务（含历史分析/策划/参考图/生成任务）不再作为资源引用阻止清理；其他功能的已完成任务如果仍是资源唯一引用，继续保留资源；排队或运行中的任务始终保留。删除项目新增“参考图生成中”拦截，并按实际任务状态拦截状态字段未同步的运行中分析，避免在飞任务删除后写出孤儿文件。素材创建/追加按资源去重，避免同批次重复项导致删除不完整。补充了批量任务清理、通用任务保留、运行中任务保留、参考图生成中拒绝删除、状态未同步拦截和重复素材去重测试。
+  - 审查修复：生成任务列表返回当前任务 `stage`/`progress`，运行中任务显示真实进度而不是固定 50%；补 `dispatching`（提交中）状态标签和动画。追加素材弹窗关闭/成功后清空已选文件，失败时保留；落地步骤在无活跃步骤时回退到第一个未完成步骤；素材删除按钮在触屏上保持可见；素材文件清理失败记录 warn 日志。
+  - 二次审查修复：素材删除/清空/删批次和项目删除在轮询活跃状态时同时检查实际分析任务状态，避免项目状态未同步时误删运行中分析的素材；同批次重复资源在前后端去重；素材变更后产品档案显示“素材已变更”并提示重新分析；生成中的参考图纳入轮询，进度可自动更新；完成态任务仅对带 `batchVideoProjectId` 的批量视频任务豁免资源保护，其他功能任务的唯一引用仍保留资源。
+  - 性能：资源引用快照改为按 100 个资源分块查询任务与任务日志，避免资源数超过 100 时退化为全量任务扫描；千条级项目删除仍需在真实数据量下评估总耗时。
+  - ego lite 实测：42% 分析进度窗 → 中止 → 状态 cancelled 且素材保留；策划进度窗 → 中止 → 轮次失败、创意保留；素材删除单张/整批/清空后资源行、参考图与文件同步清理；删除含 2 张图片的项目后资源行、删除任务和磁盘文件均消失；生成任务列表整体进度条与运行中动画进度可见。
 - 已验证：后端 `go build ./cmd/server` 通过；`go test ./internal/repository ./internal/handler ./internal/model ./internal/database` 全部通过；全新数据目录启动自动应用 schema 63（含 `batch_video_reference_assets`）并注册 29 条批量视频路由，未登录访问设置/参考图模型接口返回 401；前端 `tsc --noEmit`、`bun run build`、新文件 eslint 通过；接口冒烟覆盖设置、模型列表、上传去重、创建项目、设置更新和分析/策划错误路径；界面结构已在真实路由检查项目列表、新建向导、概览、创意/任务/素材页、策划/提交弹窗和后台设置，但当前环境无法截取画面，视觉与明暗主题未验收。
+- 已实现并验证（2026-10-28，提交/开始分离与模型优先级）：
+  - 提交生成改为只落库 `submitted` 任务，不再直接进入调度；项目详情的任务面板显示“待开始”统计和提示，提供“开始生成”和“定时生成”。定时保存 `scheduled_start_at`，服务端调度器每 3 秒检查到期项目并释放任务；暂停中的项目不会被定时释放，恢复后继续判定。
+  - 取消未开始项同时取消 `submitted` 与 `waiting` 并清除定时；项目无活跃任务时状态回到 `ready`。已提交待开始的任务会阻止素材调整。
+  - 批量视频模型能力新增 `video.batchGeneration.priority`，默认 50，后台在“允许用于批量视频”下可编辑（1–10000）。模型列表、单模型候选顺序、失败切换和 `waiting` 调度队列都按优先级从高到低；任务保存当前模型优先级快照并在切换时更新。
+  - 状态机加固：立即开始改为仓储事务（条件更新未暂停项目为 running 后再释放 submitted），定时保存/到期释放同样跳过 paused；没有可释放任务时只清空定时，不误标 running；取消和重试的状态回写使用 `status <> paused` 条件，避免覆盖用户刚发出的暂停。
+  - 验证：新增 Go 测试覆盖提交后等待开始、立即开始释放、未来定时不提前触发、到期释放、暂停时开始拒绝且定时不释放、恢复后释放、空定时不误标 running、取消待开始任务、已提交任务阻止素材调整、仅 submitted 项目可删除，以及模型列表/候选按优先级排序与默认 50；另有 service 级端到端测试（真实渠道模型 → 提交 → `ProcessBatchVideoQueue` 仍未调度 → 开始后 waiting）。`go test ./internal/app -run 'TestBatchVideo|TestCancelPending|TestSubmitBatchVideo|TestProjectCoverAppearsInResourceReferences'`、`go test ./internal/repository/... ./internal/database/... ./internal/handler/... ./internal/model/...`、`go build ./...`、前端 `bun run build` / `bun run lint` 通过。
+- 已实现并验证（2026-10-28，取消上传回收）：
+  - 上传弹窗取消或移除已上传图片时调用 `POST /batch-video/uploads/discard` 立即回收文件，不再等待 24 小时后台清理；只删除当前用户且未被任何项目、画布、任务或文档引用的资源，仍被引用的资源保留。确认创建/追加时才把上传排除出回收范围。
+  - 验证：`TestDiscardBatchVideoUploadsKeepsReferencedResources` 覆盖孤儿资源删除、仍被素材批次引用的资源保留、跨用户拒绝；`go build ./...`、`bun run build`、`bun run lint` 通过。上传后取消的浏览器路径已复验。
+- 已实现并验证（2026-10-28，逐张分析与缩略图规范）：
+  - 上传图片改为按素材顺序逐张分析，每次模型调用只附一张图片；单张结果（描述、标签、卖点、原始 JSON、完成时间）写入对应参考图资产，分析完成后汇总产品档案。每次“重新分析”都会重置并重跑全部上传图片，生成参考图标记 `skipped`。
+  - 分析进度窗改为前台逐张进度：显示当前第几张、总数、已完成/失败数和每张缩略图状态；运行中不可关闭、不可点遮罩或按 Esc 关闭，只能中止。中止保留已完成结果。
+  - 素材批次列表改为固定尺寸缩略图，不再内联大图和描述；点击缩略图打开大图、单图分析结果、标签、上传备注和删除入口。
+  - 验证：新增 `TestBatchVideoAnalysisRunsOneImageAtATimeAndStoresEachResult`，覆盖每次请求只含 1 张图片、逐张推进、单图结果落库、卖点去重和最终档案汇总；`go test ./internal/app -run 'TestBatchVideo|TestDiscardBatchVideo|TestCancelPending|TestSubmitBatchVideo|TestProjectCoverAppearsInResourceReferences'`、`bun run build`、`bun run lint` 通过。真实路由用构造的分析运行态验证：进度窗显示“正在分析第 1/2 张”，无关闭按钮，Esc 和遮罩点击均不关闭；完成后缩略图为 88px、点击打开单图分析结果。开发库没有可用视觉模型，真实上游逐张调用仍需在有视觉模型的部署复测。
+- 已实现并验证（2026-10-28，分析失败确认）：
+  - 图片分析失败不再自动跳过：项目进入 `analysisStatus=awaiting_decision`，保留失败图片和原始错误；`analysisError` 返回“第 N 张（标题）分析失败：原因”，TLS 握手超时、连接拒绝、超时、502/401/429 转换为可操作的中文提示，其余错误保留原文。新增 `POST /batch-video/projects/:id/analysis/continue` 跳过失败图片继续剩余图片；`analysis/cancel` 在等待确认时直接关闭分析。等待确认期间素材编辑、重新分析和重复提交继续被拦截。
+  - 前台进度窗在失败时显示原因、失败缩略图和“继续分析剩余图片 / 中止分析”两个动作；“下次失败时仍询问”默认勾选，取消后按本次选择写入本地偏好，下次失败自动继续或中止，每个失败点只处理一次。
+  - 验证：`TestBatchVideoAnalysisFailureWaitsForDecisionAndContinues` 覆盖 TLS 超时转为中文原因、项目停在等待确认、失败资产保留、继续后启动下一张、第二次 502 再次等待、等待确认时中止且失败状态不被覆盖；`go build ./...`、`go test ./internal/app -run 'TestBatchVideoAnalysis'`、`bun run build`、`bun run lint` 通过。ego lite 实测等待确认弹窗显示失败原因、复选框默认勾选、两个按钮；取消勾选后中止，项目变为 cancelled、弹窗关闭、本地偏好写入 `abort` 后已清理；恢复等待状态后点击“继续分析剩余图片”，弹窗关闭、项目按失败张数结束为 failed。测试前的项目与素材状态已恢复。
+  - 本次失败根因：渠道 `CHANNEL_000004`（`https://d1api.xin/v1`）未配置 `proxy_url`，直连 `d1api.xin` 8 秒超时，经本机 `socks5h://127.0.0.1:7890` 0.9 秒返回 401；任务日志为 `net/http: TLS handshake timeout`，最后一张为上游 HTTP 502。需要在渠道设置中配置代理或修复服务器出网，代码不需要改。
+- 已实现并验证（2026-10-28，通用模型优先级）：
+  - 所有渠道模型（文本、图片、视频、音频）的 `capabilityConfig` 顶层新增通用 `priority`，默认 50、范围 1–10000；音频模型首次把 `{ version, priority }` 写入原为空的能力 JSON。旧视频配置只有 `video.batchGeneration.priority` 时读取回退，保存时与新字段同步。
+  - 公开模型目录、批量视频模型列表、自动策划/视觉模型选择、参考图模型列表和批量候选/调度统一按优先级从高到低；同优先级按 `sortOrder` 再按名称。`sortOrder` 不再承担调用优先级语义。
+  - 后台渠道模型编辑器的“能力与参数”增加所有能力通用的“调用调度”区；模型列表显示调用优先级。自定义渠道设置页同样显示优先级并提供编辑入口；批量视频后台只保留“允许用于批量视频”和单次上限，不再重复维护视频专属优先级。
+  - 验证：`TestModelPriorityNormalizesForEveryCapability` 覆盖四种能力的默认值、显式值、旧视频字段回退和顶层优先；`TestSortChannelModelsByPriorityKeepsDisplayOrderForTies` 覆盖降序与同优先级稳定排序；`TestSaveAdminChannelModelPersistsAudioPriority` 覆盖音频模型保存与后台读取。`go build ./...`、`go vet ./...`、`go test ./... -skip TestCloudAgent`、`bun run build`、`bun run lint` 通过；顺带补齐 SQLite→PostgreSQL 迁移清单中遗漏的批量视频表和 `resource_storage_variants`。
+  - ego lite 实测：后台模型列表显示“调用优先级 50”，编辑改 73 保存后列表与 `GET /api/model-catalog` 都显示 73 且排首位，随后改回 50；临时创建音频模型并设 91，列表与编辑器均显示 91，改为 93 保存后列表和后台模型接口都返回 93，随后删除临时模型并清理会话。
+  - 环境边界：6 个 Cloud Agent live 回归因本机 `backend/agent-runtime/pi` 缺少 `undici` 无法运行，与本次无关。
+- 已实现并验证（2026-10-28，模型选择改为后台即时生效）：
+  - 项目不再保存任何文本/策划或参考图生成模型：`settings_json` 移除 `planningChannelModelId`、`referenceModelId`；每次分析、策划和参考图生成都按后台 `capabilityConfig.priority` 从高到低即时挑选（有图片/参考图时只接受支持读图的文本模型），后台调整优先级或新增模型后下一次任务立即生效。旧项目残留的模型字段解码时被忽略，下次保存设置时自然丢弃。
+  - 项目中不再提供手动模型选择：项目设置只保留时长、比例和标准轮数量；文本模型与参考图生成模型不可选。手动选择只保留在提交视频生成弹窗的视频模型列表，且弹窗每次打开都会重新拉取列表，后台新增视频模型无需刷新页面即可选择。
+  - 移除已无入口的 `GET /batch-video/planning-models`、`GET /batch-video/reference-models` 及对应服务与前端类型；文案从“确认策划模型后重试”改为“检查后台文本模型后重试”。
+  - 验证：`TestBatchVideoAnalysisAutoSelectsHighestPriorityVisionModel` 覆盖高优先级纯文本被跳过、视觉模型按优先级选择、旧 `planningChannelModelId` 不被采纳且 `settings_json` 不被改写、后台新增更高优先级模型后立即改用新模型；`TestBatchVideoAnalysisAutoSelectionRequiresVisionWhenImages` 覆盖无视觉模型时报错、纯文本分析可用、设置响应不再暴露固定模型。`go build ./...`、`go vet ./...`、`go test ./... -skip TestCloudAgent`、`bun run build`、`bun run lint` 通过。
+  - ego lite 真实路由：T1 项目设置为已中止状态，设置抽屉仅剩“视频时长 / 画面比例 / 标准轮创意数量”；点击“分析素材”后，项目设置里残留的 `planningChannelModelId: MODEL_000076`（d1，优先级 50）未被采纳，新分析任务实际使用 `CHANNEL_000005`（yingce，优先级 100），且 `settings_json` 未被改写。随后中止分析并把 T1 项目与 25 张素材恢复到测试前状态（14 张失败、1 张中止、10 张待分析），同时清除该项目残留的模型字段。真实上游分析成功链路仍受本机模型网络与视觉模型条件限制，需在有视觉模型的部署复测。
+- 已实现并验证（2026-10-28，声明式插件文本流式响应）：
+  - 现象：批量视频逐张图片分析在 yingce（A6api 风格插件协议 `a6api-chat`）上先挂起 20–35 秒，随后报 `protocol response is not JSON: invalid character 'd'`；纯文档分析同样失败。
+  - 根因：该网关对非流式请求只返回一个 `data:` SSE 用量帧（`choices` 为空、`completion_tokens=0`），只有请求带 `stream:true` 才返回正文；而声明式插件文本任务既没有透传流式意图，也把 SSE 响应当普通 JSON 解析。用本机渠道密钥直接复测确认：非流式 200 空 SSE，`stream:true` 返回 `OK`。
+  - 修复：声明式文本任务请求流式时把 `stream:true` 同时写入 `extra` 和插件 `providerOptions`（显式配置的值优先，非流式请求不注入）；清单响应解析新增 SSE 合并，累加 `delta.content`、分段内容数组、`reasoning_content`，`usage` 取最后一帧，错误帧转为上游失败原因；只有用量没有正文时返回“上游流式响应没有正文，请检查模型是否支持当前请求”。
+  - 验证：新增协议测试覆盖 SSE 文本增量、分段内容、空流错误、错误帧；App 测试覆盖流式标记注入与显式值不被覆盖。`go vet ./...`、`go test ./... -skip TestCloudAgent` 全部通过。真实上游用单图与纯文档两个临时项目复测：分析均 `succeeded`，图片描述为真实画面内容（“白色即热式自助煮面机…RamyCook 纸碗…”），产品摘要与卖点正常落库；测试后已删除两个临时项目。T1 未再改动，保持在 16:01 用户中止后的状态，可直接重新分析。
+- 已实现并验证（2026-10-28，图片并行分析）：
+  - 图片分析由串行改为并行：后台「批量视频设置 → 素材分析 → 并行分析数量」可配置，默认 10，范围 1–50；每次模型调用仍只附一张图片，单张结果独立落库。
+  - 调度按并发上限启动和补位：项目在途任务数达到上限后不再创建新任务，任何一张完成后自动补位下一张；全部结束才汇总产品档案和卖点。
+  - 单张失败仍进入 `awaiting_decision` 并停止补位，已在途图片继续跑完并落库，不覆盖第一条失败原因；继续分析恢复补位，中止会取消所有在途任务并标记对应素材，失败素材保留。
+  - `analysisTask` 新增 `running` 字段，进度窗显示“并行分析中：运行 N 张 · 已完成 x/y”；项目详情按 `running/done/failed/total` 汇总并行进度。
+  - 验证：`TestBatchVideoAnalysisRunsImagesInParallelAndStoresEachResult` 覆盖两张同时启动、单张完成后项目保持 running、第二张完成后汇总且卖点去重；`TestBatchVideoAnalysisFailureWaitsForDecisionAndContinues` 用 3 张图 + 并发 2 覆盖并发上限、失败停止补位、在途成功仍落库、继续后补位第三张、再次失败与取消；`TestBatchVideoAnalysisConcurrencySettingDefaultsAndClamps` 覆盖默认 10 和 1–50 边界。`go build ./...`、`go vet ./...`、`go test ./internal/app -run TestBatchVideo`、`bun run build`、`bun run lint` 通过。ego lite 实测：后台“素材分析”显示并行分析数量默认 10，改 8 保存后接口返回 8，随后恢复 10；两图临时项目启动后进度窗显示“并行分析中：运行 2 张 · 已完成 0/2”，约 25 秒后两张均 `succeeded`、项目 `succeeded`；临时项目已删除，T1 未改动。
+- 已实现并验证（2026-10-28，再次分析默认只补跑未完成图片）：
+  - `POST /batch-video/projects/:id/analyze` 新增可选 `scope`：默认 `pending` 只重跑尚未成功分析的图片（待分析、失败、已中止），已成功图片的状态、描述、标签和原始结果保持不变；`scope=all` 才重置并重跑全部图片；非法值返回 400。纯文档项目在 `pending` 且项目已完成时不再重复提交分析。
+  - 追加素材后的自动分析走增量：只分析本次新增图片，旧结果不被清空；素材变更导致项目 `stale` 时同样只补跑未完成项。
+  - 前台按钮文案改为按素材状态判断：仍有未完成图片时显示“分析素材”（增量），全部图片成功分析后显示“重新分析”（`scope=all`，保留确认弹窗，文案改为按并行数说明覆盖范围）；成功提示分别为“已提交未分析图片的分析任务”和“已提交全部图片重新分析”。
+  - 验证：`TestBatchVideoIncrementalAnalysisSkipsSucceededImages` 覆盖非法 scope、增量跳过已成功图片并重跑失败与待分析图片、已成功图片的任务 ID 与描述保持不变、`all` 范围会重置已成功图片。`go vet ./...`、`go test ./internal/app ./internal/handler -skip TestCloudAgent`、`bun run build`、`bun run lint` 通过。
+  - ego lite 真实路由：3 图临时项目首次分析（默认增量，等同全部待分析）约 24 秒三张成功后，第 1 步按钮显示“重新分析”；把其中一张改为失败态后按钮回到“分析素材”，点击后进度窗显示“正在分析第 2/3 张”“已完成 2/3”，只有该张创建新任务，另两张任务 ID 与描述未变，该张完成后描述被新结果覆盖；临时项目已删除。
+- 已实现并验证（2026-10-28，分析并行数受账号任务上限约束）：
+  - 现象：项目显示“分析失败 · 同时排队或运行的任务最多 5 个，请等待已有任务完成”。原因是图片并行数默认 10，而运行时策略「账号活动任务」上限默认 5，第 6 个任务创建失败时旧调度把整轮分析直接判为失败。
+  - 修复：补位数量取 `min(并行分析数量, 账号剩余可用槽位)`；槽位不足时保留待分析图片，在后续回收轮次继续补位，不再判失败；创建任务遇到同类限流错误同样退避重试。显式发起分析时若完全没有可用槽位，返回“账号同时最多 N 个任务，请等待已有任务完成后再分析素材”。后台“并行分析数量”提示补充了该约束。
+  - 验证：`TestBatchVideoAnalysisRespectsAccountActiveTaskLimit` 覆盖 5 个槽位被占 3 个时只启动 2 张、其余保持待分析且项目不失败，槽位占满时显式分析返回账号上限提示。`go test ./internal/app -skip TestCloudAgent`、`bun run build`、`bun run lint` 通过。
+  - ego lite 真实路由：6 图临时项目在默认上限 5 下，前 5 张同时创建并成功，第 6 张在 16 秒后槽位释放才创建并成功，项目最终 `succeeded`、无失败提示；临时项目已删除。T1 仍是上一版留下的“分析失败”状态，现在直接点“分析素材”即可按可用槽位并行补跑未完成图片。
+- 已实现并验证（2026-10-29，画布助手收起入口）：面板头部的收起控件原来是 6 个纯图标里的一个 X，几乎看不出是退出入口。现改为带文字的描边胶囊按钮「⌄ 收起」（原生 button + 面板 token，避免与 AntD 按钮样式互压），并新增 Esc 收起：输入框有草稿时 Esc 不收起，浮层打开时交给浮层处理。`bun run lint`、`bun run build` 通过；ego lite 实测：点击「收起」和按 Esc 都会在约 1 秒的退场动画后关闭面板并恢复悬浮入口，输入“草稿内容”后按 Esc 面板保持打开且草稿未丢。
+- 已实现并验证（2026-10-29，Agent 悬浮入口默认关闭）：
+  - 右下角助手悬浮入口改为默认关闭：`use-global-agent-store` 新增持久化偏好 `launcherEnabled`（默认 `false`，按账号 scope 存本机 localStorage）和用户布局侧的挂载条件，未开启且本次会话没打开过 Agent 时不挂载面板，因此不加载助手形象（动画包 / Live2D）与事件流。
+  - 「设置 → 生成偏好 → Agent 助手 → 显示 Agent 悬浮入口」提供开关，即时生效并持久化；账号切换时随会话重置。
+  - 入口关闭不影响 Agent 能力：画布内入口与 `/canvas/:id?agent=1` 深链仍会临时拉起面板，收起面板后不再出现悬浮形象；入口开启时行为不变。
+  - 验证：`bun run lint`、`bun run build` 通过。ego lite 实测：默认状态首页无悬浮入口且 `canvas-cloud-agent-panel` 代码块未被请求；设置里开关为关，打开后悬浮入口立即出现、刷新后保持开启、再次关闭后入口与面板都消失；画布页无入口，带 `?agent=1` 打开时面板正常弹出且没有悬浮形象，按 Esc 收起后两者都不存在。
 - 环境说明：`go test ./internal/app` 除 6 个 Cloud Agent live 回归外通过；这 6 项单独运行时因本机 `backend/agent-runtime/pi` 缺少 `undici` 失败，与本功能无关。
-- [ ] 在真实登录态与已配置视觉文本模型/批量视频模型的环境中，完整跑通：新建项目 → 素材分析 → 策划 → 审核 → 提交 → 失败切换/重试 → 标准验收 → 解锁量产。
-- [ ] 浏览器验收项目列表、新建向导、概览、创意审核、生成任务、素材与档案、后台批量视频设置，以及明暗主题与窄屏布局。
+- [ ] 视觉模型自动分析成功链路（环境阻塞）：本地开发库没有启用的 `maxImages>0` 文本模型，唯一文本模型被上游拒绝；已验证自动挑选、视觉能力缺失提示和成功结果落库的单测，但“上传图片 → 视觉模型分析成功 → 产品档案与图片描述自动更新”的真实端到端仍需在有视觉模型的部署复测。
+- [ ] 端到端成功链路（环境阻塞）：本机无 `CANVAS_PUBLIC_BASE_URL` 且未启用 OSS，上游无法获取本地参考图，任务在调用上游前失败。需在有公网基址或 OSS 的环境复测：提交成功 → 实际产出视频 → 标准验收 → 解锁量产。建议后续在提交预检中提前校验参考图公网可达性，而不是派发后才失败。
+- [ ] 未覆盖的真实上游路径：同模型自动重试复用任务 ID、跨模型失败切换、模式 b 多模型并发与统计、上游超时/取消/参数错误的分类重试；已提交创意在抽屉中的编辑/重匹配禁用态（本次项目仅 1 条创意且提交后上游失败，未复验）。
+- [ ] 明暗主题与窄屏布局、素材与档案页、暂停/继续调度与取消未开始项的真实交互仍待浏览器复验。
 - [ ] 验证 1000 条量产规模下的分页、并发上限、预算/积分不足拦截和参考图池上限。
-- [ ] 浏览器验收创意详情抽屉：编辑保存后转为待审核、重新匹配提示、已提交创意的禁用态。
 - [ ] 未实现项（设计文档已标注）：弱匹配 Top 3–5 模型复核、参考图需求指纹分组预算、增量素材分析合并、提交预算/幂等/限流、模式 b 创意级统计、多项目公平调度、千条级压测与重启故障注入。
+
+## 生成素材命名与素材导出文件名
+
+- 已实现：生成图片 / 视频 / 音频不再统一叫「生成图片」「生成视频」「生成音频」，改为按创建日期和类型递增的「`20261029-001`」格式；画布生成落库（`web/src/services/project-asset-sync.ts`）和服务端媒体恢复入库（`backend/internal/app/task_media_assets.go`）使用同一格式。
+- 已实现：素材库同步快照时，把历史固定标题且来源为生成任务的素材按创建日期重新编号（`web/src/lib/asset-naming.ts` 的 `normalizeGeneratedAssetTitles`）；普通上传或用户自命名素材不受影响。
+- 已实现：素材库「导出」压缩包内文件改用素材标题 + 真实后缀命名（如 `20261029-001.mp4`），不再使用 storageKey 长串或丢失后缀；同名文件自动追加序号；单个素材下载复用同一命名。
+- 验证：新增 `web/src/lib/asset-naming.test.ts`（4 项）、`TestNextGeneratedMediaTitleUsesDateAndKindSequence`；`bun test src/lib/asset-naming.test.ts`、`bunx tsc --noEmit`、`bun run build`、`go build ./...`、`go test ./internal/app -run 'TestNextGeneratedMediaTitle|TestMediaRecovery'` 通过。
+- [ ] 用户验收：新建视频生成后，素材库标题为日期序号、相互可区分；旧素材刷新后同样改名。
+- [ ] 用户验收：勾选多个视频导出 zip，确认包内文件名为日期序号并带 `.mp4` 后缀，同名不覆盖；单个素材下载文件名一致。
+
+## 素材导出计数标识
+
+- 已实现：素材导出（单条「下载」、批量「导出」以及「导出全部素材」）成功后,在 `metadata.exportCount` 上计数 +1；批量导出只给真正写进压缩包的素材计数，缺本地字节被跳过的素材不计数。
+- 已实现：素材库卡片封面右下角显示「已导出 N」，未导出过的素材不显示；计数随素材 metadata 同步到服务端，刷新和换设备保留。
+- 已实现：导入外部素材包时清除 `exportCount`，不把别人的导出历史算到自己头上。素材库分页接口的 metadata 白名单增加 `exportCount`（`backend/internal/canvas/user_asset_client_payload.go`），否则列表卡片拿不到计数。
+- 验证：新增 `web/src/lib/asset-export-count.test.ts`（3 项）、`TestClientAssetListPayloadDropsVerboseMetadata` 补充计数保留断言；`bun test src/lib/asset-export-count.test.ts`、`bunx tsc --noEmit`、`bun run build`、`bun run lint`、`go build ./...`、`go test ./internal/canvas` 通过。
+- [ ] 用户验收：分别对单个素材下载、勾选导出、导出全部素材各操作一次，确认卡片角标计数依次 +1 且刷新后保留；导入他人素材包后角标不继承。
+
+## 存量生成素材改名（迁移 67）与导出计数加固
+
+- 已实现：新增迁移 `generated_asset_titles`（version 67），把库存里标题为「生成图片/视频/音频」且来源是生成任务的素材按用户、类型、创建日期重编号，同时更新标题列与 payload；本地库实测 5 条生成视频改为 `20261012-001`、`20261012-002`、`20261013-001`、`20261013-002`、`20261017-001`，`schema_migrations` 已到 67。
+- 已修复：素材导出后写入导出计数时，不再等待本地持久化并把历史生成素材写入失败的残留错误抛出，避免导出已成功却提示失败或产生未捕获拒绝；计数失败只记控制台 warn，不影响导出结果。「导出全部素材」补齐错误提示。
+- 验证：`go build ./...`、`go test ./internal/database/...`、`bunx tsc --noEmit`、`bun run build`、`bun run lint` 通过；迁移前已备份 `.local/project-workbench-debug/backups/open_ai_canvas-before-asset-titles-*.db`。
+- [ ] 用户验收：刷新素材库确认旧视频显示日期序号；再次执行单条下载 / 勾选导出 / 导出全部，确认不再报错且角标计数增加。
+
+## 素材库批量选择的选中框与焦点环
+
+- 已修复：批量选择时，刚点选的卡片会同时出现选中框和键盘焦点环；封面（`.assets-cover-link`）、复选框、更多按钮的焦点环默认是浅灰 `--ring`，和黑色选中框叠在一起会看成「当前卡片没有黑框/变成灰框」。选中卡片上的这些焦点环统一使用选中框颜色（`--user-accent`）。
+- 已修复：选中框从 `outline` 改为 `box-shadow: 0 0 0 2px var(--user-accent) !important`。卡片带 `transform`/`backdrop-filter` 合成层时 outline 可能延迟绘制（表现为勾选后过一会儿才出现黑框）；box-shadow 随盒模型重绘，并压过 hover/focus 的 `box-shadow: none`，勾选后立即生效。视觉上黑框紧贴卡片边缘（原来是 2px 偏移）。
+- 位置：`web/src/styles/workspace-product.css` 末尾（必须在 `@layer utilities` 外，才能覆盖 `globals.css` 未分层的 `.assets-cover-link:focus-visible`）。
+- 验证：`bun run build` 通过，4010 已热更新。
+- [ ] 用户验收：批量选择多张卡片，刚点选的那张与其它已选卡片的描边颜色一致；鼠标悬停、键盘 Tab 切换后选中框不消失。
+
+## 素材导出跳过 OSS 素材
+
+- 现象：勾选导出时弹出 `Failed to fetch`。服务端日志只有一条 `POST /api/resources/access 200`，随后浏览器直连对象存储的请求没有到达后端；选中素材里有 1 条存在七牛 OSS（`resources.provider=s3`），浏览器跨域读取对象字节被拦截。
+- 已实现：导出前先识别存储位置（`queryKnownResourceProvider`，未知时用 `getResourceAccess` 的 `storageProvider` 判定），对象存储上的素材不参与导出，也不写进导出包清单，导出后提示「N 个 OSS 上的图片不能导出：标题…」；本地素材照常进包并计导出次数。
+- 已修复：本地字节读取仍逐文件容错，失败素材跳过并列出标题；全部素材都被挡或都读不到时不生成只有清单的空包，改为可读提示。
+- 位置：`web/src/pages/assets/asset-transfer.ts`（`ossAssetIds`、返回 `blockedOss`/`saved`）、`web/src/pages/assets/index.tsx`（`runAssetExport`）、`web/src/lib/media-package.ts`（`collect` 的 `onBlobError`）。
+- 验证：`bunx tsc --noEmit`、`bun run lint`、`bun run build` 通过。
+- [ ] 用户验收：勾选包含 OSS 图片的一批素材导出，确认不再报 `Failed to fetch`，提示明确列出 OSS 图片标题，本地素材正常进包并计数。
+- [ ] 要把 OSS 素材一起导出：给七牛桶配置允许应用来源的 CORS，或在后台「存储资源」把该资源「转至服务器」后重试。当前 `videoStorageTarget=local`，新生成视频不再进入 OSS。
+
+## 导出后素材库不再重新排序
+
+- 现象：导出后素材库卡片顺序变化，数量多时分不清哪些刚被导出。素材库列表按 `updated_at desc, id desc` 排序（`backend/internal/repository/asset_library.go`），任何写入只要刷新 `updated_at` 就会把素材顶到列表最前。
+- 已修复：迁移 67 用 GORM `Updates` 改名时顺带刷新了 `updated_at`，被改名的生成素材跳到第一位。新增迁移 68 `generated_asset_order` 把生成素材的 `updated_at` 恢复成 payload 里的 `updatedAt`；本地库实测 `20261017-001` 从 2026-10-29 恢复为 2026-10-17，列表回到按创建时间排布。
+- 已修复：服务端保存素材时，如果内容除了 `metadata.exportCount`（导出计数）和记账时间之外完全一致，沿用原 `updated_at`，导出计数不再影响排序（`backend/internal/canvas/user_data.go` 的 `isExportCountOnlyRewrite`）。
+- 已实现：导出后不再重新请求素材列表，角标和改名用 `patchCachedAssetLists` 就地补丁已加载的分页数据（`web/src/services/user-data-sync.ts`），卡片顺序、滚动位置和选择状态都不受影响；素材上传成功后的列表刷新也改为同样的就地补丁。
+- 验证：`go build ./...`、`go test ./internal/canvas/... ./internal/database/...`、`go test ./internal/app -run 'Asset|Media'` 通过（含新增 `TestIsExportCountOnlyRewrite`）；后端已重启，`schema_migrations` 到 68，健康检查 200。
+- [ ] 用户验收：连续导出不同批素材，列表不闪烁、不重新请求、卡片顺序不变，仅封面右下角计数立即增加；手动刷新页面后顺序仍不变。
+- 已实现：导出成功后自动退出批量选择（清空勾选），已导出的卡片改为绿色描边（`is-just-exported`，`--status-success`），提示「本页刚导出过」，避免重复导出；绿框只存在当前页面会话（组件 state），刷新或离开页面即消失，不写入素材数据。
+- [ ] 用户验收：勾选多个素材导出，确认勾选立即清空、卡片变为绿框且角标 +1；重新勾选已导出的卡片时显示选中色；刷新页面后绿框消失，角标保留。

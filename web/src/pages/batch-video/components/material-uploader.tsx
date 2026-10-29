@@ -17,6 +17,29 @@ async function imageSize(file: File): Promise<{ width: number; height: number }>
     }
 }
 
+function numericTitle(title: string): number | null {
+    const value = title.trim();
+    if (!/^\d+$/.test(value)) return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) ? number : null;
+}
+
+// 数字命名的图片按数值升序（1、2、10），非数字命名和视频保持原有相对位置。
+function sortMaterialsByNumericTitle(items: BatchVideoMaterialInput[]): BatchVideoMaterialInput[] {
+    const indexes = items
+        .map((item, index) => (item.kind === "image" && numericTitle(item.title) !== null ? index : -1))
+        .filter((index) => index >= 0);
+    if (indexes.length < 2) return items;
+    const ordered = indexes
+        .map((index) => items[index])
+        .sort((left, right) => (numericTitle(left.title) ?? 0) - (numericTitle(right.title) ?? 0));
+    const next = [...items];
+    indexes.forEach((index, position) => {
+        next[index] = ordered[position];
+    });
+    return next;
+}
+
 export function MaterialUploader({
     materials,
     onMaterialsChange,
@@ -56,7 +79,8 @@ export function MaterialUploader({
         }
         if (created.length > 0) {
             const seen = new Set(materials.map((item) => item.resourceId));
-            onMaterialsChange([...materials, ...created.filter((item) => !seen.has(item.resourceId))]);
+            const uniqueCreated = created.filter((item, index) => created.findIndex((other) => other.resourceId === item.resourceId) === index);
+            onMaterialsChange(sortMaterialsByNumericTitle([...materials, ...uniqueCreated.filter((item) => !seen.has(item.resourceId))]));
         }
     };
 

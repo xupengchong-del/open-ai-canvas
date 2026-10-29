@@ -1,6 +1,6 @@
 import type { ModelCapabilityChoice } from "@/components/model-protocol-picker";
 import type { FormInstance } from "antd";
-import { defaultModelCapabilityConfig, normalizeLegacyImageResolutionConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultModelCapabilityConfig, modelPriorityOf, normalizeLegacyImageResolutionConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { imagePresetForRatio, imageSizePresets } from "@/lib/image-size-presets";
 import { modelProtocolSupportsTokenBilling, type ModelProtocolDefinition } from "@/lib/model-protocols";
 import type { ChannelModel } from "@/services/api/wallet";
@@ -40,14 +40,11 @@ export function initialChannelModelValues(item: ChannelModel | null, protocols: 
     const capability = item?.capability || "text";
     const protocol = item ? item.protocol : protocols.find((p) => p.capability === capability && p.enabled !== false)?.value;
     const upstreamModel = item?.providerModelKey || item?.modelKey || "";
-    const rawCapabilityConfig = item?.capabilityConfig || defaultModelCapabilityConfig(protocol, upstreamModel);
-    let capabilityConfig =
-        capability === "audio"
-            ? undefined
-            : (() => {
-                  const normalized = normalizeModelCapabilityConfig(rawCapabilityConfig);
-                  return normalized.image ? { ...normalized, image: normalizeLegacyImageResolutionConfig(protocol, normalized.image) } : normalized;
-              })();
+    const rawCapabilityConfig = item?.capabilityConfig || (capability === "audio" ? { version: 1 } : defaultModelCapabilityConfig(protocol, upstreamModel));
+    let capabilityConfig = (() => {
+        const normalized = normalizeModelCapabilityConfig(rawCapabilityConfig);
+        return normalized.image ? { ...normalized, image: normalizeLegacyImageResolutionConfig(protocol, normalized.image) } : normalized;
+    })();
     const definitions = protocols.find((p) => p.value === protocol)?.imageParameters;
     if (capabilityConfig?.image && capability === "image" && definitions) capabilityConfig = { ...capabilityConfig, image: resolveImageParameters(capabilityConfig.image, definitions, upstreamModel) };
     return {
@@ -81,7 +78,8 @@ export function duplicateChannelModelValues(item: ChannelModel, protocols: Model
 export function changeChannelModelCapability(values: ChannelModelFormValues, protocols: ModelProtocolDefinition[]): ChannelModelFormValues {
     const capability = values.capability;
     const protocol = protocols.find((p) => p.value === values.protocol && p.capability === capability && p.enabled !== false)?.value || protocols.find((p) => p.capability === capability && p.enabled !== false)?.value;
-    const capabilityConfig = capability === "audio" ? undefined : defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim());
+    const priority = modelPriorityOf(values.capabilityConfig);
+    const capabilityConfig = capability === "audio" ? { version: 1, priority } : { ...defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()), priority };
     if (capabilityConfig?.image && protocols.find((p) => p.value === protocol)?.imageParameters) {
         capabilityConfig.image.parameters = [];
         if (!capabilityConfig.image.resolution.supported || !protocols.find((p) => p.value === protocol)?.imageParameters?.some((p) => p.name === "size" && p.encoding === "pixels" && !p.values?.length)) capabilityConfig.image.size.presets = undefined;
@@ -109,7 +107,8 @@ export function changeChannelModelCapability(values: ChannelModelFormValues, pro
 }
 
 export function changeChannelModelProtocol(values: ChannelModelFormValues, protocol: string, protocols: ModelProtocolDefinition[] = []): ChannelModelFormValues {
-    const capabilityConfig = values.capability === "audio" ? undefined : defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim());
+    const priority = modelPriorityOf(values.capabilityConfig);
+    const capabilityConfig = values.capability === "audio" ? { version: 1, priority } : { ...defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()), priority };
     if (capabilityConfig?.image && protocols.find((p) => p.value === protocol)?.imageParameters) {
         capabilityConfig.image.parameters = [];
         if (!capabilityConfig.image.resolution.supported || !protocols.find((p) => p.value === protocol)?.imageParameters?.some((p) => p.name === "size" && p.encoding === "pixels" && !p.values?.length)) capabilityConfig.image.size.presets = undefined;

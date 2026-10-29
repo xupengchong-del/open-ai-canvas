@@ -11,6 +11,24 @@ export function downloadName(value: string): string {
     return value.replace(/[\x00-\x1f\\/:*?"<>|]/g, "_").trim() || "画布";
 }
 
+/** 同名素材共用标题时追加序号，保留扩展名不变。 */
+function uniqueEntryName(name: string, used: Set<string>): string {
+    if (!used.has(name)) {
+        used.add(name);
+        return name;
+    }
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const extension = dot > 0 ? name.slice(dot) : "";
+    for (let index = 2; ; index++) {
+        const candidate = `${stem} (${index})${extension}`;
+        if (!used.has(candidate)) {
+            used.add(candidate);
+            return candidate;
+        }
+    }
+}
+
 export class MediaPackage {
     private readonly entries = new Map<string, BlobPart>();
 
@@ -19,14 +37,24 @@ export class MediaPackage {
         this.entries.set(path, data);
     }
 
-    async collect(keys: Iterable<string>, directory: string, imageKeys?: ReadonlySet<string>): Promise<CanvasExportAsset[]> {
+    async collect(keys: Iterable<string>, directory: string, imageKeys?: ReadonlySet<string>, fileNameOf?: (storageKey: string) => string, onBlobError?: (storageKey: string, error: unknown) => void): Promise<CanvasExportAsset[]> {
         const assets: CanvasExportAsset[] = [];
+        const usedNames = new Set<string>();
         for (const storageKey of new Set(keys)) {
             const image = imageKeys ? imageKeys.has(storageKey) : storageKey.startsWith("image:");
-            const blob = await (image ? getImageBlob(storageKey) : getMediaBlob(storageKey));
+            let blob: Blob | null;
+            try {
+                blob = await (image ? getImageBlob(storageKey) : getMediaBlob(storageKey));
+            } catch (error) {
+                // 对象存储跨域或网络失败时由调用方决定跳过还是中断，不能拖垮整个导出。
+                if (!onBlobError) throw error;
+                onBlobError(storageKey, error);
+                continue;
+            }
             // Cloud-backed references need not have a local blob and remain in the manifest.
             if (!blob) continue;
-            const path = `${directory}/${packageSegment(storageKey)}`;
+            const requested = fileNameOf ? fileNameOf(storageKey) : packageSegment(storageKey);
+            const path = `${directory}/${uniqueEntryName(requested, usedNames)}`;
             this.put(path, blob);
             assets.push({ path, storageKey, mimeType: blob.type || "application/octet-stream", bytes: blob.size });
         }

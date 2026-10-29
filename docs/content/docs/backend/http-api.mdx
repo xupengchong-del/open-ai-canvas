@@ -26,6 +26,8 @@ description: 信封、错误码与 OpenAPI
 
 ## 图片响应格式
 
+所有渠道模型（`text`、`image`、`video`、`audio`）的 `capabilityConfig` 顶层都包含通用调用优先级 `priority`：默认 50，范围 1–10000，数值越大越优先。它用于公开模型目录、自动选择策划/视觉/参考图模型以及批量视频候选与调度；`sortOrder` 仍只表示管理员展示顺序。音频模型没有能力参数，但同样保存 `{ "version": 1, "priority": N }`；旧视频配置若只写过 `video.batchGeneration.priority`，读取时回退到该字段，保存时两者同步。
+
 渠道模型的 `capabilityConfig.image.responseFormat` 包含 `supported` 和可选的 `default`。默认值为 `auto`，表示请求中不发送 `response_format`，由上游决定返回 URL 或 Base64；`b64_json` 和 `url` 会分别强制发送对应值。该配置按模型保存，不根据 `openai-image` 协议名称自动推断，避免兼容网关不接受 Base64 时生成失败。需要持久化 Base64 结果的模型（例如已验证的 ddcat 图片模型）应将默认值设为 `b64_json`。
 
 ## 用户登录日志
@@ -106,6 +108,10 @@ handle 放错端点、格式错误或行 ID 不存在时，工具错误回执提
 公开注册与邮箱绑定的唯一性检查将 `gmail.com` 和 `googlemail.com` 视为同一域，移除本地部分的点及 `+` 后缀。例如 `a.b+x@googlemail.com` 与 `ab@gmail.com` 不允许创建两个账号。其他域保留点和 `+`；现有域名白名单规则保持不变。
 
 邮箱原值仍按原有小写、去首尾空格规则保存。登录、密码重置、验证码收件地址保持精确邮箱匹配，避免既有重复别名账号被合并或错误授权。已存在的重复账号不迁移、不删除、不重新发放注册奖励；它们会阻止相同规范信箱的新注册。写入前在事务内重新检查，以覆盖不同实例使用不同验证码的并发注册。无数据库结构迁移；唯一性由公开注册与绑定的事务入口保证，直接 SQL 写入不属于该约束入口。
+
+## 视频上传与生成结果存储策略
+
+「生成结果存储策略」（`oss.videoStorageTarget`）对视频统一生效：`local` 时，生成结果落盘、`POST /api/resources`、分片上传合并和 `POST /api/resources/import` 都把视频写入服务器本地磁盘，不再上传对象存储。视频由浏览器回传时也必须走这条约束，客户端无法只靠传参绕过。图片不在强制范围内：批量视频参考图依赖对象存储提供上游可访问的公网地址，仍按 OSS 开关保存。已有的对象存储视频需要管理员逐条调用 `POST /api/admin/resources/:id/move-to-local` 迁回本地，脚本见 `scripts/nas/migrate-oss-videos-to-local.py`。
 
 ## 分片上传配额
 
@@ -262,7 +268,7 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 ### 用户模型目录
 
-`GET /model-catalog` 固定返回 `source=system`，直接查询所有启用系统渠道下的渠道模型，目录数据在 `channels[].models[]`，`models` 固定为空数组。不受逻辑模型开关影响，不反查逻辑模型或供应线路。每项的 `modelKey` 是调用标识，`displayName` 是一级分组展示名（未设置时归入 `未分类`），`icon` 是模型图标键，`channelLabel` 是二级渠道展示名。后台渠道模型创建与更新请求使用相同的 `channelLabel` 字段；服务端去除首尾空白后限制为 80 字，空值或与上游模型 ID 相同的值表示不固化该名称，读取时回退到上游模型 ID（默认与上游 ID 保持一致，上游改名时自动跟随）。
+`GET /model-catalog` 固定返回 `source=system`，直接查询所有启用系统渠道下的渠道模型，目录数据在 `channels[].models[]`，`models` 固定为空数组。不受逻辑模型开关影响，不反查逻辑模型或供应线路。每项的 `modelKey` 是调用标识，`displayName` 是一级分组展示名（未设置时归入 `未分类`），`icon` 是模型图标键，`channelLabel` 是二级渠道展示名，`priority` 是通用调用优先级（默认 50）；目录内模型按 `priority` 从高到低返回，同优先级沿用管理员展示排序。后台渠道模型创建与更新请求使用相同的 `channelLabel` 字段；服务端去除首尾空白后限制为 80 字，空值或与上游模型 ID 相同的值表示不固化该名称，读取时回退到上游模型 ID（默认与上游 ID 保持一致，上游改名时自动跟随）。
 
 渠道模型创建、更新、管理列表、公开目录和会话模型价格信息均使用 `description` 表达模型描述。服务端去除首尾空白后限制为 500 字，允许空字符串清除描述；无管理员权限或超长内容拒绝保存。创作端二级选项常驻展示该字段，不依赖悬浮 Tooltip；未填写的系统模型不按名称生成宣传文案。
 
@@ -478,16 +484,22 @@ CSV 使用中文表头、UTF-8 BOM、CRLF；金额按整数分精确转换为两
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/batch-video/uploads` | 上传素材。`purpose` 仅支持 `material_image`、`material_video`、`material_document`；上传一律强制本地保存，视频参考图的 OSS 副本只能由服务端生成流程创建（客户端不能指定 `video_reference`）。文档仅接受 `.md`/`.txt`。按文件 SHA-256 去重。 |
-| `GET` | `/batch-video/settings` | 当前批量视频参数（标准轮、量产上限、重试次数等）。 |
-| `GET` | `/batch-video/models` | 已开启 `video.batchGeneration.enabled` 的视频模型。 |
-| `GET` | `/batch-video/planning-models` | 可用于素材分析与创意策划的文本模型，返回读图上限；素材包含图片时必须选择支持读图的模型，仅文档分析不要求视觉能力。 |
-| `GET` | `/batch-video/reference-models` | 可用于补充项目参考图的图片模型。 |
+| `POST` | `/batch-video/uploads/discard` | 回收上传弹窗里未确认的上传：取消弹窗或移除图片时调用。只删除当前用户且未被任何项目、画布、任务或文档引用的资源，仍被引用的资源保留；单次最多 100 个资源 ID。返回 `discarded` 数量。 |
+| `GET` | `/batch-video/settings` | 当前批量视频参数（标准轮、量产上限、重试次数、图片分析并行数等）。图片分析并行数 `analysisConcurrency` 默认 10，范围 1–50。 |
+| `GET` | `/batch-video/models` | 已开启 `video.batchGeneration.enabled` 的视频模型，返回通用 `capabilityConfig.priority`（默认 50）并按优先级从高到低排序。 |
 | `GET` | `/batch-video/projects` | 项目列表，支持 `stage`、`page`、`pageSize`。 |
-| `POST` | `/batch-video/projects` | 创建项目并写入首批素材、文档和卖点。`name`、`productName` 必填，素材与文档至少提供一项；标准轮创意数量必须为 5–20 条。 |
-| `GET` | `/batch-video/projects/:id` | 项目详情：设置、素材批次、卖点、参考图、轮次、创意、任务与验收状态。 |
-| `PATCH` | `/batch-video/projects/:id/settings` | 修改时长、比例、标准数量、策划模型和参考图模型；已有分析会标记为 `stale`。 |
-| `POST` | `/batch-video/projects/:id/material-batches` | 追加素材批次。 |
-| `POST` | `/batch-video/projects/:id/analyze` | 创建素材分析任务，由策划模型输出产品档案、卖点和图片描述。 |
+| `POST` | `/batch-video/projects` | 创建项目。仅 `name` 必填；`productName` 可选（留空时使用项目名称）；`settings`、素材与文档均可省略，创建后在项目内逐步补充。标准轮创意数量必须为 5–20 条。 |
+| `GET` | `/batch-video/projects/:id` | 项目详情：设置、素材批次、卖点、参考图、轮次、创意、任务与验收状态；分析任务的 `analysisTask` 携带阶段、进度和起止时间。 |
+| `DELETE` | `/batch-video/projects/:id` | 删除项目并级联删除素材批次、卖点、参考图、创意、任务与验收记录，同时清理未被其他项目、画布或业务记录引用的素材文件；仍被别处引用的资源与文件保留。批量视频已完成任务的历史记录保留用于计费对账，但不再阻止文件清理；其他功能任务的引用仍会保留资源。存在进行中的分析、策划、参考图生成或视频生成任务时拒绝（包括项目状态未同步的实际运行任务）。 |
+| `PATCH` | `/batch-video/projects/:id/settings` | 修改时长、比例和标准数量；已有分析会标记为 `stale`。文本分析与参考图生成模型不在项目中保存，每次按后台优先级即时挑选。 |
+| `POST` | `/batch-video/projects/:id/material-batches` | 追加素材批次。`label` 可留空，服务端生成“当天日期 素材批次 N”；图片文件名去掉扩展名后为纯数字时按数值升序保存。前端在成功后立即调用分析接口，服务端不自动排队。 |
+| `DELETE` | `/batch-video/projects/:id/material-batches` | 清空项目全部素材批次、参考图和仅被本项目使用的素材文件；已被创意引用的素材会拒绝清空。分析、策划或生成运行时拒绝。 |
+| `DELETE` | `/batch-video/projects/:id/material-batches/:batchId` | 删除单个素材批次；同一资源仍被其他批次使用时保留参考图和文件。清除后项目分析标记为 `stale`。 |
+| `DELETE` | `/batch-video/projects/:id/material-batches/:batchId/materials/:resourceId` | 删除批次中的单个素材；已被创意引用的素材拒绝删除。批次内素材和文档都清空后自动删除批次。 |
+| `POST` | `/batch-video/projects/:id/analyze` | 创建素材分析：有图片时按后台 `analysisConcurrency`（默认 10，范围 1–50）并行执行，实际同时启动数还会被运行时策略的“账号活动任务”上限（默认 5）夹紧；槽位不足时保留待分析图片并在后续回收轮次继续补位，不会把整轮分析判为失败。显式发起时若无可用槽位，返回“账号同时最多 N 个任务，请等待已有任务完成后再分析素材”。每个任务仍只把一张图片附给视觉模型，单图结果写入该 `referenceAssets` 的 `analysisStatus`、`description`、`tagsJson`、`analysisResultJson`、`analyzedAt`；全部结束后汇总产品档案和卖点。仅文档项目执行一次文本分析。请求体 `scope` 默认 `pending`：只重跑尚未成功分析的图片（待分析、失败、已中止），已成功图片的结果与描述保持不变；`scope=all` 才重置并重跑全部图片。前台在全部图片分析完成后把“分析素材”改为“重新分析”，点击“重新分析”使用 `scope=all` 并要求确认。文本模型每次按后台 `capabilityConfig.priority` 从高到低自动挑选（有图片时只接受支持读图的模型），不在项目中保存选择，后台调整优先级或新增模型后下一次分析立即生效；分析进行中或等待失败确认时重复调用直接返回当前详情。`analysisTask` 额外返回 `total`、`done`、`failed`、`running`、`assetId`、`assetTitle`。单张图片失败时不会自动跳过：项目进入 `analysisStatus=awaiting_decision` 并停止补位，已在途图片继续跑完并落库，`analysisError` 返回“第 N 张（标题）分析失败：原因”，失败图片保留在 `referenceAssets` 且 `analysisStatus=failed`。继续分析会重新补位待分析图片，中止会取消所有在途任务。TLS 握手超时、连接拒绝、超时、502/401/429 会转换为可操作的中文原因；其他错误保留原文（最长 200 字）。 |
+| `POST` | `/batch-video/projects/:id/analysis/continue` | 在 `awaiting_decision` 时确认跳过失败图片，继续分析剩余图片；没有待分析图片时直接汇总产品档案并把最终状态置为 `failed`（含失败张数）。 |
+| `POST` | `/batch-video/projects/:id/analysis/cancel` | 中止进行中的素材分析或关闭 `awaiting_decision`。素材、已完成图片的结果和已生成卖点保留；运行中的当前图片标记 `cancelled`，`analysisStatus` 置为 `cancelled`，可重新分析。 |
+| `POST` | `/batch-video/projects/:id/planning/cancel` | 中止进行中的创意策划。已完成创意保留，进行中的轮次标记为失败并允许重新生成。 |
 | `POST` | `/batch-video/projects/:id/creatives/generate` | 创建创意策划任务。每 50 条拆成一个策划轮次，便于模型稳定输出和失败重试。标准轮至少 5 条、最多 20 条；量产轮最多 1000 条且需先解锁量产。 |
 | `GET` | `/batch-video/projects/:id/creatives` | 分页查询创意，支持 `roundId`、`reviewStatus`、`matchStatus`。 |
 | `PATCH` | `/batch-video/projects/:id/creatives/:creativeId` | 编辑创意标题、钩子、文案、视频与图片提示词。已提交生成的创意不能修改；保存后重置为待审核，且不允许与项目内已有创意完全重复。 |
@@ -499,9 +511,10 @@ CSV 使用中文表头、UTF-8 BOM、CRLF；金额按整数分精确转换为两
 | `GET` | `/batch-video/projects/:id/validation` | 标准验收清单。 |
 | `POST` | `/batch-video/projects/:id/unlock-mass` | 标准验收全部通过后解锁量产。 |
 | `POST` | `/batch-video/projects/:id/preflight` | 提交前预检，与正式提交共用同一套授权、快照、计价与容量校验。 |
-| `POST` | `/batch-video/projects/:id/submit` | 提交已通过创意。`allApproved=true` 提交全部；`mode` 为 `single`（失败切换模型）或 `multi`（同时提交多个模型）。未解锁量产时单次最多提交标准上限（5–20 条），解锁量产后单轮最多 1000 条。 |
-| `POST` | `/batch-video/projects/:id/cancel-pending` | 取消项目内全部未开始（waiting）的生成任务；已提交上游的任务不受影响。 |
-| `GET` | `/batch-video/projects/:id/jobs` | 分页查询生成任务。 |
+| `POST` | `/batch-video/projects/:id/submit` | 提交已通过创意，落库为 `submitted`，**不会立即调用模型**。`allApproved=true` 提交全部；`mode` 为 `single`（失败按优先级切换模型）或 `multi`（同时提交多个模型）。未解锁量产时单次最多提交标准上限（5–20 条），解锁量产后单轮最多 1000 条。模型候选和调度都按通用 `capabilityConfig.priority`（默认 50）从大到小。 |
+| `POST` | `/batch-video/projects/:id/start` | 开始已提交任务。不传 `scheduledAt` 时立即释放 `submitted` 任务进入调度队列；传未来时间时保存定时，到点由调度器自动释放。暂停中的项目拒绝开始。 |
+| `POST` | `/batch-video/projects/:id/cancel-pending` | 取消项目内全部未开始（`submitted` / `waiting`）的生成任务并清除定时；已提交上游的任务不受影响。 |
+| `GET` | `/batch-video/projects/:id/jobs` | 分页查询生成任务；每项附带当前任务阶段 `stage` 和进度 `progress`，用于运行中进度条。 |
 | `GET` | `/batch-video/projects/:id/jobs/:jobId/attempts` | 单个任务的尝试历史（含模型切换与重试结果）。 |
 | `POST` | `/batch-video/projects/:id/jobs/:jobId/retry` | 单个失败任务重新排队。 |
 | `POST` | `/batch-video/projects/:id/retry-failed` | 重试项目内全部失败任务。 |

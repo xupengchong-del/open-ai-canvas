@@ -55,9 +55,7 @@ finally:
 file = root / "backend/internal/app/task_media_assets.go"
 original = file.read_bytes()
 for name, needle, replacement, scenario, evidence in [
-    ("imageTitle", '"image": "生成图片"', '"image": "生成作品"', "edit-before-get", "backend/frontend title defaults must agree"),
-    ("videoTitle", '"video": "生成视频"', '"video": "生成作品"', "edit-video", "backend/frontend title defaults must agree"),
-    ("audioTitle", '"audio": "生成音频"', '"audio": "生成作品"', "edit-audio", "backend/frontend title defaults must agree"),
+    ("mediaTitle", 'return fmt.Sprintf("%s-%03d", day, next), nil', 'return "生成作品", nil', "edit-video", "backend/frontend title defaults must agree"),
     ("sourceDefault", '"source": "生成任务", ', '', "edit-source", "backend/frontend source defaults must agree"),
 ]:
     needle, replacement = needle.encode(), replacement.encode()

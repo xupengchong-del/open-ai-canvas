@@ -46,20 +46,6 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
-  /batch-video/planning-models:
-    get:
-      tags: [batch-video]
-      summary: 列出可用于策划的文本模型（含读图上限；素材包含图片时需要选择支持读图的模型，仅文档分析不要求视觉能力）
-      responses:
-        "200":
-          $ref: "#/components/responses/Envelope"
-  /batch-video/reference-models:
-    get:
-      tags: [batch-video]
-      summary: 列出可用于补充参考图的图片模型
-      responses:
-        "200":
-          $ref: "#/components/responses/Envelope"
   /batch-video/uploads:
     post:
       tags: [batch-video]
@@ -82,6 +68,26 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
+  /batch-video/uploads/discard:
+    post:
+      tags: [batch-video]
+      summary: 回收未确认的批量视频上传
+      description: 上传弹窗取消或移除图片时调用；只删除当前用户、且未被任何项目、画布、任务或文档引用的资源，仍被引用的资源保留。单次最多 100 个资源 ID。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resourceIds]
+              properties:
+                resourceIds:
+                  type: array
+                  maxItems: 100
+                  items: {type: string}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
   /batch-video/projects:
     get:
       tags: [batch-video]
@@ -95,15 +101,15 @@ paths:
           $ref: "#/components/responses/Envelope"
     post:
       tags: [batch-video]
-      summary: 创建项目并写入首批素材
-      description: name、productName 必填；materials 与 documents 至少提供一项（可只凭卖点文档创建）。标准轮创意数量必须为 5–20 条。
+      summary: 创建项目（仅需项目名称）
+      description: 仅 name 必填；productName 可选（留空时策划与卖点使用项目名称）；settings、materials、documents 均可省略，素材与参数在项目内通过 material-batches 与 settings 接口逐步补充。标准轮创意数量必须为 5–20 条。
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, productName]
+              required: [name]
               properties:
                 name: {type: string}
                 productName: {type: string}
@@ -113,8 +119,6 @@ paths:
                     durationSeconds: {type: integer}
                     aspectRatio: {type: string}
                     standardCreativeCount: {type: integer, minimum: 5, maximum: 20}
-                    planningChannelModelId: {type: string, description: 素材包含图片时必须是支持读图的文本渠道模型}
-                    referenceModelId: {type: string, description: 用于补充生成参考图的图片渠道模型，可选}
                 materials:
                   type: array
                   items:
@@ -153,6 +157,15 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
+    delete:
+      tags: [batch-video]
+      summary: 删除项目及其从属记录
+      description: 只有项目归属用户可以删除；会级联删除素材批次、卖点、参考图、创意、生成任务、尝试记录与验收快照。存在进行中的分析、策划或生成任务时拒绝删除。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
   /batch-video/projects/{id}/settings:
     patch:
       tags: [batch-video]
@@ -169,8 +182,6 @@ paths:
                 durationSeconds: {type: integer}
                 aspectRatio: {type: string}
                 standardCreativeCount: {type: integer, minimum: 5, maximum: 20}
-                planningChannelModelId: {type: string}
-                referenceModelId: {type: string}
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
@@ -193,10 +204,71 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
+    delete:
+      tags: [batch-video]
+      summary: 清空项目全部素材批次与参考图
+      description: 分析、策划或生成运行时拒绝；仍被创意引用的素材不会删除。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/material-batches/{batchId}:
+    delete:
+      tags: [batch-video]
+      summary: 删除单个素材批次
+      description: 批量删除属于该批次的图片和文档；仍被其他批次使用的资源与文件会保留。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: batchId, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/material-batches/{batchId}/materials/{resourceId}:
+    delete:
+      tags: [batch-video]
+      summary: 删除批次中的单个素材
+      description: 已被创意引用的素材会拒绝删除；批次清空后自动删除该批次。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: path, name: batchId, required: true, schema: {type: string}}
+        - {in: path, name: resourceId, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
   /batch-video/projects/{id}/analyze:
     post:
       tags: [batch-video]
-      summary: 创建素材分析任务
+      summary: 创建素材分析任务（并行分析图片）
+      description: 有图片时按后台 analysisConcurrency（默认 10，范围 1–50）并行分析，每次模型调用只附带一张图片；每张结果写入对应 referenceAssets 的 analysisStatus、description、tagsJson、analysisResultJson 和 analyzedAt。analysisTask 额外返回 total、done、failed、running、assetId、assetTitle 用于前台进度。scope=pending（默认）只重跑尚未成功分析的图片，scope=all 重置并重跑全部图片。仅文档项目执行一次文本分析。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope: {type: string, enum: [pending, all], default: pending, description: 分析范围；pending 只补跑未成功分析的图片，all 重跑全部素材}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/analysis/cancel:
+    post:
+      tags: [batch-video]
+      summary: 中止进行中的素材分析
+      description: 素材与已完成图片的分析结果保留，当前图片标记 cancelled，项目 analysisStatus 置为 cancelled，可重新分析。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/planning/cancel:
+    post:
+      tags: [batch-video]
+      summary: 中止进行中的创意策划
+      description: 已完成的创意保留；进行中的轮次标记为 failed 并允许重新生成。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       responses:
@@ -393,8 +465,8 @@ paths:
   /batch-video/projects/{id}/submit:
     post:
       tags: [batch-video]
-      summary: 提交已通过创意
-      description: 每个模型必须启用且开启 video.batchGeneration.enabled。未解锁量产时单次最多提交标准阶段上限（5–20 条）；解锁量产后单轮最多 1000 条。
+      summary: 提交已通过创意（提交后不立即生成）
+      description: 每个模型必须启用且开启 video.batchGeneration.enabled，并使用通用 capabilityConfig.priority（默认 50，越大越先调用）。未解锁量产时单次最多提交标准阶段上限（5–20 条）；解锁量产后单轮最多 1000 条。任务以 submitted 状态落库，需调用 /start 立即开始或定时开始。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       requestBody:
@@ -420,6 +492,24 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
+  /batch-video/projects/{id}/start:
+    post:
+      tags: [batch-video]
+      summary: 开始或定时开始已提交的生成任务
+      description: 不传 scheduledAt 时立即释放 submitted 任务进入调度队列；传入未来时间时保存定时，到达时间后由服务端自动释放。调度按模型优先级从高到低执行。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scheduledAt: {type: string, format: date-time}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
   /batch-video/projects/{id}/jobs:
     get:
       tags: [batch-video]
@@ -435,7 +525,7 @@ paths:
   /batch-video/projects/{id}/cancel-pending:
     post:
       tags: [batch-video]
-      summary: 取消项目内全部未开始（waiting）的生成任务
+      summary: 取消项目内全部未开始（submitted / waiting）的生成任务并清除定时
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       responses:

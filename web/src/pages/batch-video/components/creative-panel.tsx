@@ -1,5 +1,5 @@
 import { Button, Checkbox, Image, Tag, Tooltip } from "antd";
-import { Check, ImageOff, Loader2, Pencil, RefreshCw, Sparkles, X } from "lucide-react";
+import { Check, ImageOff, Loader2, Pencil, X } from "lucide-react";
 
 import { resourceFileUrl } from "@/services/api/resources";
 import type { BatchVideoCreative, BatchVideoProjectDetail } from "@/services/api/batch-video";
@@ -34,14 +34,13 @@ export function CreativePanel({
     submitSelected,
     generatingRound,
     actionLoading,
+    mode = "review",
     onReviewSelectChange,
     onSubmitSelectChange,
     onPageChange,
     onFilterChange,
     onReview,
     onBatchReview,
-    onGenerate,
-    onSubmit,
     onGenerateReference,
     onOpen,
 }: {
@@ -56,17 +55,17 @@ export function CreativePanel({
     submitSelected: Set<string>;
     generatingRound: boolean;
     actionLoading: string;
+    mode?: "plan" | "review";
     onReviewSelectChange: (next: Set<string>) => void;
     onSubmitSelectChange: (next: Set<string>) => void;
     onPageChange: (page: number, pageSize: number) => void;
     onFilterChange: (value: string) => void;
     onReview: (creative: BatchVideoCreative, status: "approved" | "rejected") => void;
     onBatchReview: (status: "approved" | "rejected") => void;
-    onGenerate: () => void;
-    onSubmit: () => void;
     onGenerateReference: (creative: BatchVideoCreative) => void;
     onOpen: (creative: BatchVideoCreative) => void;
 }) {
+    const reviewMode = mode === "review";
     const reviewable = creatives.filter((creative) => creative.reviewStatus === "pending");
     const submittable = creatives.filter((creative) => creative.reviewStatus === "approved");
     const allReviewSelected = reviewable.length > 0 && reviewable.every((creative) => reviewSelected.has(creative.id));
@@ -92,36 +91,37 @@ export function CreativePanel({
                     <span className="text-xs text-foreground/45">{total} 条创意</span>
                     {generatingRound ? <Tag color="processing" bordered={false} icon={<Loader2 className="size-3 animate-spin" />}>策划模型生成中</Tag> : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <Button size="small" icon={<RefreshCw className="size-3.5" />} onClick={() => onPageChange(page, pageSize)} loading={loading}>
-                        刷新
-                    </Button>
-                    <Button size="small" icon={<Sparkles className="size-3.5" />} onClick={onGenerate}>
-                        生成创意
-                    </Button>
-                    <Button size="small" disabled={reviewable.length === 0} onClick={() => toggleAll(reviewable, reviewSelected, allReviewSelected, onReviewSelectChange)}>
-                        {allReviewSelected ? "取消待审全选" : "全选本页待审"}
-                    </Button>
-                    <Button size="small" type="primary" icon={<Check className="size-3.5" />} disabled={reviewSelected.size === 0} loading={actionLoading === "batch-approved"} onClick={() => onBatchReview("approved")}>
-                        批量通过
-                    </Button>
-                    <Button size="small" danger icon={<X className="size-3.5" />} disabled={reviewSelected.size === 0} loading={actionLoading === "batch-rejected"} onClick={() => onBatchReview("rejected")}>
-                        批量驳回
-                    </Button>
-                    <Button size="small" disabled={submittable.length === 0} onClick={() => toggleAll(submittable, submitSelected, allSubmitSelected, onSubmitSelectChange)}>
-                        {allSubmitSelected ? "取消生成全选" : "全选本页已通过"}
-                    </Button>
-                    <Button size="small" type="primary" disabled={submitSelected.size === 0} onClick={onSubmit}>提交已选（{submitSelected.size}）</Button>
-                </div>
+                {reviewMode ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button size="small" disabled={reviewable.length === 0} onClick={() => toggleAll(reviewable, reviewSelected, allReviewSelected, onReviewSelectChange)}>
+                            {allReviewSelected ? "取消待审全选" : "全选本页待审"}
+                        </Button>
+                        <Button size="small" type="primary" icon={<Check className="size-3.5" />} disabled={reviewSelected.size === 0} loading={actionLoading === "batch-approved"} onClick={() => onBatchReview("approved")}>
+                            批量通过
+                        </Button>
+                        <Button size="small" danger icon={<X className="size-3.5" />} disabled={reviewSelected.size === 0} loading={actionLoading === "batch-rejected"} onClick={() => onBatchReview("rejected")}>
+                            批量驳回
+                        </Button>
+                        <Tooltip title="勾选已通过创意后，在页面上方“提交生成”中选择“当前勾选”">
+                            <Button size="small" disabled={submittable.length === 0} onClick={() => toggleAll(submittable, submitSelected, allSubmitSelected, onSubmitSelectChange)}>
+                                {allSubmitSelected ? "取消生成全选" : "全选本页已通过"}
+                            </Button>
+                        </Tooltip>
+                        {submittable.length > 0 ? (
+                            <span className="text-[11px] text-foreground/40">
+                                已勾选 {submitSelected.size} 条，提交时在顶部“提交生成”选择“当前勾选”
+                            </span>
+                        ) : null}
+                    </div>
+                ) : (
+                    <span className="text-[11px] text-foreground/40">策划完成后，到“人工审核”逐条通过或驳回创意。</span>
+                )}
             </div>
 
             {creatives.length === 0 && !loading ? (
                 <div className="rounded-xl border border-dashed border-border/80 bg-surface px-4 py-12 text-center">
                     <p className="text-sm font-medium">当前筛选下没有创意</p>
-                    <p className="mt-1 text-xs text-foreground/45">{reviewFilter ? "切换审核状态查看其他创意。" : "先完成素材分析，再点击“生成创意”。"}</p>
-                    {!reviewFilter && detail.sellingPoints.length > 0 ? (
-                        <Button className="mt-4" type="primary" icon={<Sparkles className="size-4" />} onClick={onGenerate}>生成创意</Button>
-                    ) : null}
+                    <p className="mt-1 text-xs text-foreground/45">{reviewFilter ? "切换审核状态查看其他创意。" : "先完成素材分析，再点击页面上方“生成创意”。"}</p>
                 </div>
             ) : (
                 <div className={loading ? "pointer-events-none opacity-60" : ""}>
@@ -131,16 +131,18 @@ export function CreativePanel({
                             const pending = creative.reviewStatus === "pending";
                             return (
                                 <article key={creative.id} className="flex gap-3 rounded-xl border border-border/70 bg-surface p-3">
-                                    <div className="flex w-12 shrink-0 flex-col items-center gap-3 pt-1 text-[10px] text-foreground/45">
-                                        <label className="grid justify-items-center gap-1">
-                                            <Checkbox checked={reviewSelected.has(creative.id)} disabled={!pending} onChange={() => toggleOne(creative.id, reviewSelected, onReviewSelectChange)} aria-label="选择审核创意" />
-                                            审核
-                                        </label>
-                                        <label className="grid justify-items-center gap-1">
-                                            <Checkbox checked={submitSelected.has(creative.id)} disabled={creative.reviewStatus !== "approved"} onChange={() => toggleOne(creative.id, submitSelected, onSubmitSelectChange)} aria-label="选择生成创意" />
-                                            生成
-                                        </label>
-                                    </div>
+                                    {reviewMode ? (
+                                        <div className="flex w-12 shrink-0 flex-col items-center gap-3 pt-1 text-[10px] text-foreground/45">
+                                            <label className="grid justify-items-center gap-1">
+                                                <Checkbox checked={reviewSelected.has(creative.id)} disabled={!pending} onChange={() => toggleOne(creative.id, reviewSelected, onReviewSelectChange)} aria-label="选择审核创意" />
+                                                审核
+                                            </label>
+                                            <label className="grid justify-items-center gap-1">
+                                                <Checkbox checked={submitSelected.has(creative.id)} disabled={creative.reviewStatus !== "approved"} onChange={() => toggleOne(creative.id, submitSelected, onSubmitSelectChange)} aria-label="选择生成创意" />
+                                                生成
+                                            </label>
+                                        </div>
+                                    ) : null}
                                     <div className="relative h-36 w-28 shrink-0 overflow-hidden rounded-lg bg-surface-active/60">
                                         {imageUrl ? (
                                             <Image src={imageUrl} alt={creative.title} className="h-full w-full object-contain" preview={{ mask: "查看参考图" }} />
@@ -181,29 +183,31 @@ export function CreativePanel({
                                                     生成参考图
                                                 </Button>
                                             ) : null}
-                                            {creative.reviewStatus === "approved" || creative.reviewStatus === "rejected" ? (
-                                                <Tooltip title="切换审核结论">
-                                                    <Button size="small" type="text" onClick={() => onReview(creative, "rejected" === creative.reviewStatus ? "approved" : "rejected")}>
-                                                        {creative.reviewStatus === "approved" ? "改为驳回" : "改为通过"}
-                                                    </Button>
-                                                </Tooltip>
-                                            ) : (
-                                                <>
-                                                    <Button size="small" danger icon={<X className="size-3.5" />} loading={actionLoading === `rejected-${creative.id}`} onClick={() => onReview(creative, "rejected")}>
-                                                        驳回
-                                                    </Button>
-                                                    <Button
-                                                        size="small"
-                                                        type="primary"
-                                                        icon={<Check className="size-3.5" />}
-                                                        disabled={creative.matchStatus !== "matched"}
-                                                        loading={actionLoading === `approved-${creative.id}`}
-                                                        onClick={() => onReview(creative, "approved")}
-                                                    >
-                                                        通过
-                                                    </Button>
-                                                </>
-                                            )}
+                                            {reviewMode ? (
+                                                creative.reviewStatus === "approved" || creative.reviewStatus === "rejected" ? (
+                                                    <Tooltip title="切换审核结论">
+                                                        <Button size="small" type="text" onClick={() => onReview(creative, "rejected" === creative.reviewStatus ? "approved" : "rejected")}>
+                                                            {creative.reviewStatus === "approved" ? "改为驳回" : "改为通过"}
+                                                        </Button>
+                                                    </Tooltip>
+                                                ) : (
+                                                    <>
+                                                        <Button size="small" danger icon={<X className="size-3.5" />} loading={actionLoading === `rejected-${creative.id}`} onClick={() => onReview(creative, "rejected")}>
+                                                            驳回
+                                                        </Button>
+                                                        <Button
+                                                            size="small"
+                                                            type="primary"
+                                                            icon={<Check className="size-3.5" />}
+                                                            disabled={creative.matchStatus !== "matched"}
+                                                            loading={actionLoading === `approved-${creative.id}`}
+                                                            onClick={() => onReview(creative, "approved")}
+                                                        >
+                                                            通过
+                                                        </Button>
+                                                    </>
+                                                )
+                                            ) : null}
                                         </div>
                                     </div>
                                 </article>

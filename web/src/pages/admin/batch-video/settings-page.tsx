@@ -103,6 +103,17 @@ export default function BatchVideoSettingsPage() {
 
                     <SettingsSectionCard
                         icon={<Settings2 className="size-4" />}
+                        title="素材分析"
+                        description="图片按并发数同时调用视觉模型，单张失败时暂停补位并等待确认；可用槽位不足时自动延后补位，不会判为分析失败。"
+                        layout="stacked"
+                    >
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label="并行分析数量" hint="默认 10，范围 1–50；实际并行数不超过后台运行时策略的“账号活动任务”上限" value={draft.analysisConcurrency} min={1} max={50} onChange={(value) => updateNumber("analysisConcurrency", value)} />
+                        </div>
+                    </SettingsSectionCard>
+
+                    <SettingsSectionCard
+                        icon={<Settings2 className="size-4" />}
                         title="参考图池"
                         description="参考图由程序按标签匹配；达到上限后不再自动扩容。"
                         layout="stacked"

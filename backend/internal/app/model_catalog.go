@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	"yingce/backend/internal/logging"
@@ -72,6 +73,7 @@ type PublicChannelModel struct {
 	Description      string                        `json:"description"`
 	DisplayName      string                        `json:"displayName"`
 	SortOrder        int                           `json:"sortOrder"`
+	Priority         int                           `json:"priority"`
 	Icon             string                        `json:"icon"`
 	Capability       string                        `json:"capability"`
 	Protocol         model.ChannelInterfaceType    `json:"protocol"`
@@ -170,6 +172,16 @@ func (s *Service) publicSystemChannelCatalog(intent *ModelRequestIntent) ([]Publ
 		}
 
 		if len(publicModels) > 0 {
+			// 目录默认按调用优先级降序，同优先级沿用管理员的展示排序。
+			sort.SliceStable(publicModels, func(i, j int) bool {
+				if publicModels[i].Priority != publicModels[j].Priority {
+					return publicModels[i].Priority > publicModels[j].Priority
+				}
+				if publicModels[i].SortOrder != publicModels[j].SortOrder {
+					return publicModels[i].SortOrder < publicModels[j].SortOrder
+				}
+				return publicModels[i].DisplayName < publicModels[j].DisplayName
+			})
 			// 系统渠道的真实名称属于内部部署信息（供应商、中转站、内部命名等），
 			// 不得通过普通用户可访问的创作目录泄漏。前端只依赖 ID 做分组，名称留空后由客户端统一展示为“系统模型”。
 			result = append(result, PublicChannelCatalog{
@@ -251,6 +263,7 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 		Description:      cm.Description,
 		DisplayName:      cm.DisplayName,
 		SortOrder:        cm.SortOrder,
+		Priority:         effectiveModelPriority(normalized),
 		Icon:             cm.Icon,
 		Capability:       cm.Capability,
 		Protocol:         cm.Protocol,

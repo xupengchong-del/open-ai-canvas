@@ -100,6 +100,10 @@ func (s *Service) UpsertUserAsset(userID string, raw json.RawMessage) (UserDataS
 		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 			return existingErr
 		}
+		if existing != nil && isExportCountOnlyRewrite(existing.PayloadJSON, asset.PayloadJSON) {
+			// 导出计数只是标记：素材库按 updated_at 排序，这类写入不能把素材顶到列表最前。
+			asset.UpdatedAt = existing.UpdatedAt
+		}
 		if existing != nil && existing.PayloadJSON != asset.PayloadJSON {
 			if err := s.ValidateAssetCanvasReferences(userID, asset); err != nil {
 				return err
@@ -519,6 +523,49 @@ func (s *Service) DeleteUserCanvasProject(userID string, id string) error {
 		return canvasMutationError("canvas_edit_lease_conflict", err.Error())
 	}
 	return err
+}
+
+// isExportCountOnlyRewrite 判断两份素材 JSON 的内容是否一致：只允许 metadata.exportCount 和记账时间不同。
+func isExportCountOnlyRewrite(before string, after string) bool {
+	if before == after {
+		return false
+	}
+	left, ok := normalizedAssetContent(before)
+	if !ok {
+		return false
+	}
+	right, ok := normalizedAssetContent(after)
+	return ok && left == right
+}
+
+// normalizedAssetContent 去掉记账时间与导出计数，保留其余字段原始字节用于比较。
+func normalizedAssetContent(raw string) (string, bool) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", false
+	}
+	delete(payload, "createdAt")
+	delete(payload, "updatedAt")
+	if metadataRaw, ok := payload["metadata"]; ok {
+		var metadata map[string]json.RawMessage
+		if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
+			return "", false
+		}
+		if _, ok := metadata["exportCount"]; ok {
+			delete(metadata, "exportCount")
+			encoded, err := json.Marshal(metadata)
+			if err != nil {
+				return "", false
+			}
+			payload["metadata"] = encoded
+		}
+	}
+	// map 键排序一致，其余字段保留原始字节，同一素材只差计数时两边归一化结果相同。
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return "", false
+	}
+	return string(normalized), true
 }
 
 func AssetFromJSON(userID string, raw json.RawMessage) (model.Asset, error) {

@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -43,6 +46,27 @@ func RegisterBatchVideoRoutes(api *gin.RouterGroup, svc *service.Service) {
 		ok(c, resource)
 	})
 
+	r.POST("/uploads/discard", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var input struct {
+			ResourceIDs []string `json:"resourceIds"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		count, err := svc.DiscardBatchVideoUploads(user.ID, input.ResourceIDs)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		ok(c, gin.H{"discarded": count})
+	})
+
 	r.GET("/settings", func(c *gin.Context) {
 		if _, err := currentUser(c, svc); err != nil {
 			failService(c, err)
@@ -62,32 +86,6 @@ func RegisterBatchVideoRoutes(api *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		models, err := svc.ListBatchVideoModels()
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, models)
-	})
-
-	r.GET("/planning-models", func(c *gin.Context) {
-		if _, err := currentUser(c, svc); err != nil {
-			failService(c, err)
-			return
-		}
-		models, err := svc.ListBatchVideoPlanningModels()
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, models)
-	})
-
-	r.GET("/reference-models", func(c *gin.Context) {
-		if _, err := currentUser(c, svc); err != nil {
-			failService(c, err)
-			return
-		}
-		models, err := svc.ListBatchVideoReferenceModels()
 		if err != nil {
 			failService(c, err)
 			return
@@ -144,6 +142,19 @@ func RegisterBatchVideoRoutes(api *gin.RouterGroup, svc *service.Service) {
 		ok(c, project)
 	})
 
+	r.DELETE("/projects/:id", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if err := svc.DeleteBatchVideoProject(user.ID, c.Param("id")); err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"deleted": true})
+	})
+
 	r.PATCH("/projects/:id/settings", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -186,15 +197,107 @@ func RegisterBatchVideoRoutes(api *gin.RouterGroup, svc *service.Service) {
 		ok(c, batch)
 	})
 
+	r.DELETE("/projects/:id/material-batches", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		project, err := svc.ClearBatchVideoMaterials(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, project)
+	})
+
+	r.DELETE("/projects/:id/material-batches/:batchId", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		project, err := svc.DeleteBatchVideoMaterialBatch(user.ID, c.Param("id"), c.Param("batchId"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, project)
+	})
+
+	r.DELETE("/projects/:id/material-batches/:batchId/materials/:resourceId", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		project, err := svc.DeleteBatchVideoMaterial(user.ID, c.Param("id"), c.Param("batchId"), c.Param("resourceId"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, project)
+	})
+
 	r.POST("/projects/:id/analyze", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		project, err := svc.AnalyzeBatchVideoProject(user.ID, c.Param("id"))
+		var req struct {
+			Scope string `json:"scope"`
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<10)
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		project, err := svc.AnalyzeBatchVideoProject(user.ID, c.Param("id"), req.Scope)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		ok(c, project)
+	})
+
+	r.POST("/projects/:id/analysis/continue", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		project, err := svc.ContinueBatchVideoAnalysis(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, project)
+	})
+
+	r.POST("/projects/:id/analysis/cancel", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		project, err := svc.CancelBatchVideoAnalysis(c.Request.Context(), user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, project)
+	})
+
+	r.POST("/projects/:id/planning/cancel", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		project, err := svc.CancelBatchVideoPlanning(c.Request.Context(), user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
 			return
 		}
 		ok(c, project)
@@ -421,6 +524,27 @@ func RegisterBatchVideoRoutes(api *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		count, err := svc.SubmitBatchVideoGeneration(user.ID, c.Param("id"), input)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		ok(c, gin.H{"jobs": count})
+	})
+
+	r.POST("/projects/:id/start", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var input struct {
+			ScheduledAt *time.Time `json:"scheduledAt"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		count, err := svc.StartBatchVideoGeneration(user.ID, c.Param("id"), input.ScheduledAt)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return

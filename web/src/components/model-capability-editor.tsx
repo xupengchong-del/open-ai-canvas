@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/base/switch";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import type { ReactNode } from "react";
 
-import { DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS, defaultImageCapabilityConfig, defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ImageCapabilityConfig, type ImageResponseFormat, type ModelCapabilityConfig, type TextCapabilityConfig, type VideoCapabilityConfig } from "@/lib/model-capabilities";
+import { DEFAULT_MODEL_PRIORITY, DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS, MAX_MODEL_PRIORITY, defaultImageCapabilityConfig, defaultModelCapabilityConfig, modelPriorityOf, normalizeModelCapabilityConfig, type ImageCapabilityConfig, type ImageResponseFormat, type ModelCapabilityConfig, type TextCapabilityConfig, type VideoCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocol, ModelProtocolWorkflow } from "@/lib/model-protocols";
 import { ImageParameterSchemaEditor, ImageParameterSizeEditor } from "@/components/image-parameter-fields";
 import { updateImageParameterSchema, resolveImageParameters, type ImageParameter } from "@/lib/image-parameters";
@@ -35,31 +35,57 @@ type Props = {
     value?: ModelCapabilityConfig;
     onChange?: (value: ModelCapabilityConfig) => void;
     protocol?: ModelProtocol;
-    capability?: "text" | "image" | "video";
+    capability?: "text" | "image" | "video" | "audio";
     model?: string;
     workflows?: ModelProtocolWorkflow[];
     imageParameters?: ImageParameter[];
     disabled?: boolean;
-    section?: "all" | "protocol" | "references";
+    section?: "all" | "protocol" | "references" | "priority";
 };
 
+function PriorityEditor({ value, onChange, disabled }: Pick<Props, "value" | "onChange" | "disabled">) {
+    return (
+        <div className="admin-capability-editor space-y-3 rounded-md bg-muted/20 p-3">
+            <CapabilityGroup title="调用优先级" description="数值越大越优先；自动选择模型和批量调度都会按优先级从高到低。">
+                <NumberField
+                    label="优先级（1-10000，默认 50）"
+                    value={modelPriorityOf(value)}
+                    min={1}
+                    max={MAX_MODEL_PRIORITY}
+                    disabled={Boolean(disabled)}
+                    onChange={(priority) => onChange?.({ ...(value || { version: 1 }), priority: priority || DEFAULT_MODEL_PRIORITY })}
+                />
+            </CapabilityGroup>
+        </div>
+    );
+}
+
 export function ModelCapabilityEditor({ value, onChange, protocol, capability = "video", model = "", workflows = [], imageParameters, disabled = false, section = "all" }: Props) {
+    if (section === "priority") {
+        return <PriorityEditor value={value} onChange={onChange} disabled={disabled} />;
+    }
+    const config = normalizeModelCapabilityConfig(value || (capability === "audio" ? { version: 1 } : defaultModelCapabilityConfig(protocol, model)));
+    // 子编辑器只改各自能力块，统一在这里保留通用优先级，避免任何一次编辑把它丢掉。
+    const emit = (next: ModelCapabilityConfig) => onChange?.({ ...next, priority: next.priority ?? config.priority });
+    if (capability === "audio") {
+        return null;
+    }
     if (capability === "text") {
-        return <TextCapabilityEditor value={value} onChange={onChange} protocol={protocol} disabled={disabled} section={section} />;
+        return <TextCapabilityEditor value={config} onChange={emit} protocol={protocol} disabled={disabled} section={section} />;
     }
     if (capability === "image") {
-        return <ImageCapabilityEditor value={value} onChange={onChange} protocol={protocol} model={model} imageParameters={imageParameters} disabled={disabled} section={section} />;
+        return <ImageCapabilityEditor value={config} onChange={emit} protocol={protocol} model={model} imageParameters={imageParameters} disabled={disabled} section={section} />;
     }
     const workflow = workflows.find((item) => item.id === model.trim().replace(/^models\//, "") && item.providerId === protocol);
-    const storedProfile = normalizeModelCapabilityConfig(value || defaultModelCapabilityConfig(protocol, model)).video!;
+    const storedProfile = config.video!;
     const autoDL = protocol === "autodl-comfyui";
     const profile = autoDL ? resolveWorkflowVideoScreenSpec(storedProfile, workflow) : storedProfile;
-    const update = (patch: Partial<VideoCapabilityConfig>) => onChange?.({ version: 1, video: { ...profile, ...patch } });
+    const update = (patch: Partial<VideoCapabilityConfig>) => emit({ version: 1, video: { ...profile, ...patch } });
     const updateReferences = (patch: Partial<VideoCapabilityConfig["references"]>) => update({ references: { ...profile.references, ...patch } });
     const updateDuration = (patch: Partial<VideoCapabilityConfig["duration"]>) => update({ duration: { ...profile.duration, ...patch } });
     const durationValues = (profile.duration.values || []).join(",");
     const resolutionOptions = Array.from(new Set([...VIDEO_RESOLUTION_CAPABILITY_OPTIONS, ...profile.resolutions]));
-    const autoDLSpecFields = <AutoDLScreenSpecFields profile={profile} workflow={workflow} disabled={disabled} onChange={(video) => onChange?.({ version: 1, video })} />;
+    const autoDLSpecFields = <AutoDLScreenSpecFields profile={profile} workflow={workflow} disabled={disabled} onChange={(video) => emit({ version: 1, video })} />;
     // 视频处理模型（画质增强等）：帧率策略与源视频时长上限；生成模型不显示。
     const processing = profile.processing;
     const processingFields = processing ? (
