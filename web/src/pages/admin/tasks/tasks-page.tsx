@@ -68,6 +68,10 @@ export default function TaskMonitorPage() {
     const pageSize = normalizePageSize(searchParams.get("pageSize"));
     const customFrom = searchParams.get("from") || "";
     const customTo = searchParams.get("to") || "";
+    // 按用户汇总有自己的时间窗：默认跟随上方列表，也可以单独选择。
+    const userRangeParam = searchParams.get("userRange");
+    const userFrom = searchParams.get("userFrom") || "";
+    const userTo = searchParams.get("userTo") || "";
     const debouncedKeyword = useDebouncedValue(keyword);
 
     const [tasks, setTasks] = useState<AdminTaskMonitorRow[]>([]);
@@ -84,6 +88,11 @@ export default function TaskMonitorPage() {
     const requestSequence = useRef(0);
 
     const range = useMemo(() => resolveRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
+    const summaryPreset = userRangeParam ? normalizePreset(userRangeParam) : "page";
+    const summaryRange = useMemo(
+        () => (summaryPreset === "page" ? range : resolveRange(summaryPreset, userFrom, userTo)),
+        [summaryPreset, userFrom, userTo, range],
+    );
     const hasFilters = Boolean(keyword || status !== "all" || capability !== "all" || userId);
 
     const updateUrl = (patch: Record<string, string | number>, replace = false) => {
@@ -101,6 +110,33 @@ export default function TaskMonitorPage() {
             else next.set(key, String(value));
         });
         setSearchParams(next, { replace });
+    };
+
+    // 汇总时间窗独立保存；第一次切到自定义时用当前窗口填入起止，避免输入框为空。
+    const changeSummaryRange = (value: string) => {
+        const next = new URLSearchParams(searchParams);
+        if (value === "page") {
+            next.delete("userRange");
+            next.delete("userFrom");
+            next.delete("userTo");
+        } else {
+            next.set("userRange", value);
+            if (value !== "custom") {
+                next.delete("userFrom");
+                next.delete("userTo");
+            } else {
+                if (!next.get("userFrom")) next.set("userFrom", summaryRange.from);
+                if (!next.get("userTo")) next.set("userTo", summaryRange.to);
+            }
+        }
+        setSearchParams(next, { replace: false });
+    };
+
+    const changeSummaryBoundary = (key: "userFrom" | "userTo", value: string) => {
+        const next = new URLSearchParams(searchParams);
+        next.set("userRange", "custom");
+        next.set(key, value);
+        setSearchParams(next, { replace: false });
     };
 
     const listParams = useMemo(
@@ -147,8 +183,8 @@ export default function TaskMonitorPage() {
     const loadUserStats = useCallback(async () => {
         try {
             const [analytics, metrics] = await Promise.all([
-                listAdminAnalyticsUsers({ from: range.from, to: range.to }),
-                listAdminTaskUserStats({ from: range.from, to: range.to }),
+                listAdminAnalyticsUsers({ from: summaryRange.from, to: summaryRange.to }),
+                listAdminTaskUserStats({ from: summaryRange.from, to: summaryRange.to }),
             ]);
             setAnalyticsUsers(analytics.users);
             setUserStats(metrics.users);
@@ -157,7 +193,7 @@ export default function TaskMonitorPage() {
             setAnalyticsUsers([]);
             setUserStats([]);
         }
-    }, [range.from, range.to]);
+    }, [summaryRange.from, summaryRange.to]);
 
     useEffect(() => {
         void loadTasks(false);
@@ -353,9 +389,17 @@ export default function TaskMonitorPage() {
             </div>
 
             <div className="mt-6">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
                     <h2 className="text-sm font-medium">按用户汇总</h2>
-                    <span className="text-xs text-foreground/45">任务数与成功/失败按左侧时间窗统计；其余维度沿用既有用户统计口径</span>
+                    <Select aria-label="按用户汇总的时间范围" className="w-32" value={summaryPreset} options={[{ label: "跟随列表", value: "page" }, ...RANGE_OPTIONS.map((item) => ({ label: item.label, value: item.value }))]} onChange={(value) => changeSummaryRange(String(value))} />
+                    {summaryPreset === "custom" ? (
+                        <>
+                            <input type="datetime-local" className="admin-datetime-input" aria-label="汇总开始时间" value={toLocalInput(userFrom)} onChange={(event) => changeSummaryBoundary("userFrom", fromLocalInput(event.target.value))} />
+                            <span className="text-xs text-foreground/45">至</span>
+                            <input type="datetime-local" className="admin-datetime-input" aria-label="汇总结束时间" value={toLocalInput(userTo)} onChange={(event) => changeSummaryBoundary("userTo", fromLocalInput(event.target.value))} />
+                        </>
+                    ) : null}
+                    <span className="ml-auto text-xs text-foreground/45">任务数与成功/失败按此时间窗统计；其余维度沿用既有用户统计口径</span>
                 </div>
                 <AdminDataTable
                     skeletonColumns={6}
