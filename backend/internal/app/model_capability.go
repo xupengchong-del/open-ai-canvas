@@ -13,12 +13,13 @@ import (
 
 // ModelCapabilityConfig 是模型能力声明，不包含供应商字段名；协议适配器负责把统一参数映射到上游请求。
 type ModelCapabilityConfig struct {
-	Version int                    `json:"version"`
+	MediaTransport *ReferenceMediaTransport `json:"mediaTransport,omitempty"`
+	Version        int                      `json:"version"`
 	// Priority 是所有能力的通用调用优先级：数值越大越优先，自动选择与批量调度按它降序。
-	Priority int                    `json:"priority"`
-	Text     *TextCapabilityConfig  `json:"text,omitempty"`
-	Image    *ImageCapabilityConfig `json:"image,omitempty"`
-	Video    *VideoCapabilityConfig `json:"video,omitempty"`
+	Priority       int                      `json:"priority"`
+	Text           *TextCapabilityConfig    `json:"text,omitempty"`
+	Image          *ImageCapabilityConfig   `json:"image,omitempty"`
+	Video          *VideoCapabilityConfig   `json:"video,omitempty"`
 }
 
 const (
@@ -36,6 +37,8 @@ type TextCapabilityConfig struct {
 	// MaxOutputTokens is the provider's maximum completion/reasoning budget.
 	MaxOutputTokens int                 `json:"maxOutputTokens"`
 	References      TextReferenceConfig `json:"references"`
+	// Thinking 声明模型支持的思考档位和上游写法；为空时按协议沿用开关语义，见 text_thinking.go。
+	Thinking *TextThinkingConfig `json:"thinking,omitempty"`
 }
 
 type TextReferenceConfig struct {
@@ -278,6 +281,14 @@ func NormalizeModelCapabilityConfig(capability string, protocol string, input *M
 }
 
 func NormalizeModelCapabilityConfigForModel(capability string, protocol string, modelName string, input *ModelCapabilityConfig, registries ...*protocolcontract.Registry) (*ModelCapabilityConfig, error) {
+	var transport *ReferenceMediaTransport
+	if input != nil {
+		var err error
+		transport, err = normalizeReferenceMediaTransport(input.MediaTransport)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if capability != "text" && capability != "image" && capability != "video" && capability != "audio" {
 		return nil, nil
 	}
@@ -304,10 +315,19 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if text.MaxOutputTokens == 0 {
 			text.MaxOutputTokens = 16384
 		}
-		value := &ModelCapabilityConfig{Version: 1, Priority: priority, Text: &text}
+		value := &ModelCapabilityConfig{Version: 1, MediaTransport: transport, Priority: priority, Text: &text}
 		if err := validateTextCapabilityConfig(value.Text); err != nil {
 			return nil, err
 		}
+		var registry *protocolcontract.Registry
+		if len(registries) > 0 {
+			registry = registries[0]
+		}
+		thinking, err := normalizeTextThinkingConfig(text.Thinking, thinkingWireForProtocol(protocol, registry), text.MaxOutputTokens)
+		if err != nil {
+			return nil, err
+		}
+		value.Text.Thinking = thinking
 		return value, nil
 	}
 	if capability == "image" {
@@ -335,7 +355,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if input.Image.Parameters == nil {
 			fillMissingImageSizePresets(input.Image, protocol)
 		}
-		value := &ModelCapabilityConfig{Version: 1, Priority: priority, Image: input.Image}
+		value := &ModelCapabilityConfig{Version: 1, MediaTransport: transport, Priority: priority, Image: input.Image}
 		if err := validateImageCapabilityConfig(value.Image); err != nil {
 			return nil, err
 		}
@@ -360,7 +380,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 			return nil, err
 		}
 	}
-	value := &ModelCapabilityConfig{Version: 1, Priority: priority, Video: video}
+	value := &ModelCapabilityConfig{Version: 1, MediaTransport: transport, Priority: priority, Video: video}
 	if err := validateVideoCapabilityConfig(value.Video); err != nil {
 		return nil, err
 	}

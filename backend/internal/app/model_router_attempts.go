@@ -243,7 +243,11 @@ func (s *Service) switchTaskToNextRoute(task *model.Task, attempts []model.Route
 	for _, attempt := range attempts {
 		tried[attempt.RouteID] = true
 	}
-	eligible := s.eligibleLogicalRoutes(candidates, intent, tried, logicalModel.PricePolicy == "channel")
+	access, err := s.userGroupAccess(task.UserID)
+	if err != nil {
+		return nil, err
+	}
+	eligible := s.eligibleLogicalRoutes(access, candidates, intent, tried, logicalModel.PricePolicy == "channel")
 	if len(eligible) == 0 {
 		return nil, BadAuthRequest("当前模型暂时无法满足这组输入和参数")
 	}
@@ -275,7 +279,12 @@ func (s *Service) switchTaskToNextRoute(task *model.Task, attempts []model.Route
 			capability = capabilityFromTaskType(task.Type)
 		}
 		priceTierID, _ := config["priceTierId"].(string)
-		replacement, err = s.newBillingOrderWithPriceTier(task.UserID, task.ID, "route-switch:"+task.ID+":"+selected.Route.ID, selected.ChannelModel.ChannelID, selected.ChannelModel.ModelKey, capability, firstNonEmpty(strings.TrimSpace(task.Operation), task.Type), requestedBillingQuantity(capability, config), estimateTaskBillingTokens(nextInput, capability), strings.TrimSpace(priceTierID), intent)
+		// 换线路仍属于同一次任务：分时 Token 规则沿用原订单创建时的时段。
+		current, loadErr := s.repo.BillingOrder(task.BillingOrderID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		replacement, err = s.newBillingOrderWithPriceTierAt(current.CreatedAt, task.UserID, task.ID, "route-switch:"+task.ID+":"+selected.Route.ID, selected.ChannelModel.ChannelID, selected.ChannelModel.ModelKey, capability, firstNonEmpty(strings.TrimSpace(task.Operation), task.Type), requestedBillingQuantity(capability, config), s.estimateTaskBilling(task.UserID, nextInput, capability), strings.TrimSpace(priceTierID), intent)
 		if err != nil {
 			return nil, err
 		}
@@ -369,7 +378,11 @@ func (s *Service) prepareLogicalTaskRetry(task *model.Task, input map[string]any
 		// 归档只隐藏新任务的公开目录；历史任务重试必须使用任务快照，不能重新从公开目录选路。
 		routed, err = s.resolveArchivedTaskRoute(task, intent)
 	} else {
-		routed, err = s.ResolveLogicalModel(task.LogicalModelID, intent)
+		var access *userGroupAccess
+		if access, err = s.userGroupAccess(task.UserID); err != nil {
+			return err
+		}
+		routed, err = s.ResolveLogicalModel(access, task.LogicalModelID, intent)
 	}
 	if err != nil {
 		return err

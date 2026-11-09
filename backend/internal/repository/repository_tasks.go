@@ -24,6 +24,13 @@ func (r *Repository) Task(id string) (*model.Task, error) {
 	return &task, nil
 }
 
+// TaskStatus 避免等待循环反复读取大输入、文本草稿和结果正文。
+func (r *Repository) TaskStatus(id string) (model.TaskStatus, error) {
+	var task model.Task
+	err := r.db.Select("status").First(&task, "id = ?", id).Error
+	return task.Status, err
+}
+
 func (r *Repository) TaskForUser(userID string, id string) (*model.Task, error) {
 	var task model.Task
 	if err := r.db.First(&task, "id = ? AND user_id = ?", id, userID).Error; err != nil {
@@ -83,9 +90,10 @@ func (r *Repository) ClaimNextTask(owner string, leaseDuration time.Duration) (*
 		}
 		updated := claim.
 			Updates(map[string]any{
-				"status":           model.TaskStatusRunning,
-				"stage":            "后端接管任务",
-				"progress":         15,
+				"status": model.TaskStatusRunning,
+				// 回查已被上游接收的任务时保留原进度（如“候车 · 前面 N 条”），避免每轮领取时文案来回跳。
+				"stage":            gorm.Expr("CASE WHEN provider_request_id <> '' THEN stage ELSE ? END", "后端接管任务"),
+				"progress":         gorm.Expr("CASE WHEN provider_request_id <> '' THEN progress ELSE ? END", 15),
 				"attempts":         gorm.Expr("attempts + ?", 1),
 				"started_at":       gorm.Expr("COALESCE(started_at, ?)", now),
 				"lease_owner":      owner,

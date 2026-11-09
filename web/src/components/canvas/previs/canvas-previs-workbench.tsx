@@ -41,7 +41,6 @@ import {
     Video,
     Save,
     Plus,
-    WandSparkles,
     BoxSelect,
     Image as ImageIcon,
     Users,
@@ -67,7 +66,7 @@ const PREVIS_ADD_BUTTONS: Array<{ kind: PrevisAddKind; label: string; icon: type
 import { nanoid } from "nanoid";
 import { type PrevisShortcutAction, resolvePrevisShortcut, blocksPrevisShortcut, releasePrevisFocusAfterPointer, PREVIS_SHORTCUT_GUIDE, PREVIS_TOOL_LABELS } from "@/lib/canvas/previs/previs-shortcuts";
 import { saveAs } from "file-saver";
-import { resolvePrevisDepthRange } from "@/lib/canvas/previs/previs-optics";
+import { previsAspectOption, resolvePrevisDepthRange } from "@/lib/canvas/previs/previs-optics";
 import { formatPrevisTimecode, openPrevisMonitorWindow, type PrevisMonitorHandle } from "./previs-monitor-window";
 import { Euler, Vector3, type AnimationClip } from "three";
 import { compilePrevisPrompt } from "@/lib/canvas/previs/previs-prompt-compiler";
@@ -89,6 +88,7 @@ import { describePrevisSaveStatus, shouldBlockPrevisUnload, resolvePrevisCloseOu
 import { usePrevisSaveCoordinator } from "@/components/canvas/previs/use-previs-save-coordinator";
 import "./canvas-previs-workbench.css";
 import { useAssetStore, type ModelAsset } from "@/stores/use-asset-store";
+import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { usePrevisWorkbenchStore } from "@/stores/canvas/use-previs-workbench-store";
 import { PREVIS_MODES, previsModeCapabilities } from "@/lib/canvas/previs/previs-modes";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
@@ -121,6 +121,7 @@ export function CanvasPrevisWorkbench({
 }) {
     const { message, modal } = App.useApp();
     const theme = canvasThemes[useActiveTheme()];
+    const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const effectiveCanvasId = useMemo(() => {
         const explicit = canvasId?.trim();
         if (explicit) return explicit;
@@ -1121,6 +1122,7 @@ export function CanvasPrevisWorkbench({
             surface = viewport.createShotSurface({ longEdge: 1920 });
             const activeSurface = surface;
             monitorRef.current = openPrevisMonitorWindow({
+                brandName,
                 renderFrame: () => {
                     const state = monitorStateRef.current;
                     if (!state.shot) return null;
@@ -1143,6 +1145,9 @@ export function CanvasPrevisWorkbench({
     // 监看窗口每帧读取最新的镜头、渲染模式与播放头；只写 ref，不触发重渲染。
     const monitorStateRef = useRef({ shot: activeShot, mode: renderMode, playhead });
     monitorStateRef.current = { shot: activeShot, mode: renderMode, playhead };
+    useEffect(() => {
+        monitorRef.current?.setBrandName(brandName);
+    }, [brandName]);
     useEffect(
         () => () => {
             monitorRef.current?.close();
@@ -1317,7 +1322,9 @@ export function CanvasPrevisWorkbench({
                     <X className="size-4" />
                 </button>
                 <div className="previs-desk-brand">
-                    <span className="previs-desk-logo">影策</span>
+                    <span className="previs-desk-logo" title={brandName}>
+                        {brandName}
+                    </span>
                     <span className="previs-desk-brand-title">预演台</span>
                     <span className="previs-desk-brand-sub">AI 短剧预演</span>
                 </div>
@@ -1680,6 +1687,7 @@ export function CanvasPrevisWorkbench({
                             <Camera className="size-3" />
                             <span>{(selectedCamera || activeCamera)?.name}</span>
                             <span className="pv-cam-hud__meta">{(selectedCamera || activeCamera)?.focalLength}mm</span>
+                            <span className="pv-cam-hud__meta">{previsAspectOption(activeShot.aspectRatio).label}</span>
                         </div>
                     ) : null}
                     {trajectoryDrawing ? (
@@ -1709,6 +1717,12 @@ export function CanvasPrevisWorkbench({
                         onToggleTrajectory={() => setTrajectoryDrawing((active) => !active)}
                         viewMode={viewMode}
                         onViewModeChange={setViewMode}
+                        aspectRatio={activeShot.aspectRatio}
+                        onAspectRatioChange={(aspectRatio) => {
+                            if (aspectRatio !== previsAspectOption(activeShot.aspectRatio).value) updateShot(activeShot.id, { aspectRatio });
+                            // 画幅只在机位视图里有安全框：选完直接切过去，看到的就是成片取景。
+                            setViewMode("camera");
+                        }}
                         cameras={draft.cameras}
                         viewedCameraId={selectedCameraId || activeShot.cameraId || null}
                         onViewCamera={(id) => {

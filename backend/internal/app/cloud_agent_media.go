@@ -17,24 +17,37 @@ import (
 )
 
 // The Agent uses the same public catalog as the composer, never a second routing policy.
-func (s *Service) cloudAgentModelList(intent *ModelRequestIntent) (any, error) {
-	catalog, err := s.ModelCatalog(intent)
+func (s *Service) cloudAgentModelList(userID string, intent *ModelRequestIntent) (any, error) {
+	access, err := s.userGroupAccess(userID)
 	if err != nil {
 		return nil, err
 	}
-	logicalModels, err := s.PublicLogicalModels(intent)
+	catalog, err := s.ModelCatalog(access, intent)
+	if err != nil {
+		return nil, err
+	}
+	logicalModels, err := s.PublicLogicalModels(access, intent)
 	if err != nil {
 		return nil, err
 	}
 	items := []map[string]any{}
 	for _, m := range logicalModels {
 		if m.Available && cloudAgentGenerationModeSupported(normalizeCapability(m.Capability)) {
+			if !cloudAgentVideoCatalogMatches(intent, m.CapabilitySpec.Operations, "") {
+				continue
+			}
 			items = append(items, map[string]any{"name": m.Name, "capability": m.Capability, "selection": map[string]any{"logicalModelId": m.ID}, "priceLabel": m.PriceLabel, "priceTiers": m.PriceTiers, "options": m.CapabilitySpec, "profiles": m.CapabilityProfiles, "defaults": m.DefaultOptions})
 		}
 	}
 	for _, channel := range catalog.Channels {
 		for _, m := range channel.Models {
 			if m.Available && cloudAgentGenerationModeSupported(normalizeCapability(m.Capability)) {
+				if intent != nil && intent.Capability == "video" {
+					video, _ := m.CapabilityConfig["video"].(map[string]any)
+					if !cloudAgentVideoCatalogMatches(intent, stringSlice(video["operations"]), stringValue(video["defaultOperation"])) {
+						continue
+					}
+				}
 				items = append(items, map[string]any{"name": m.DisplayName, "capability": m.Capability, "selection": map[string]any{"channelId": channel.ID, "channelModelKey": m.ModelKey}, "priceLabel": m.PriceLabel, "priceTiers": m.PriceTiers, "options": m.CapabilityConfig, "defaults": m.DefaultOptions})
 			}
 		}
@@ -99,7 +112,12 @@ func (s *Service) cloudAgentModelIntent(userID, canvasID, arguments string) (*Mo
 		return nil, err
 	}
 	refs["mode"] = a.Mode
-	intent := ModelRequestIntentFromTaskInput(refs, "canvas_"+a.Mode, cloudAgentMediaOperation(a.Mode, refs))
+	operation := cloudAgentMediaOperation(a.Mode, refs)
+	if a.Mode == "video" {
+		// 查询目录时尚未选择模型；先按真实输入筛选，再按各模型的操作合同匹配。
+		operation = ""
+	}
+	intent := ModelRequestIntentFromTaskInput(refs, "canvas_"+a.Mode, operation)
 	return &intent, nil
 }
 
@@ -187,11 +205,16 @@ func (s *Service) cloudAgentMediaModelName(a cloudAgentMediaArgs) (string, error
 	if !cloudAgentGenerationModeSupported(a.Mode) {
 		return "", BadAuthRequest("生成模式当前不受 Agent 支持")
 	}
-	catalog, err := s.ModelCatalog(nil)
+	// 只把模型标识翻译成展示名，不做授权；授权在任务准入和账单预留中按用户分组完成。
+	access, err := s.systemGroupAccess()
 	if err != nil {
 		return "", err
 	}
-	logicalModels, err := s.PublicLogicalModels(nil)
+	catalog, err := s.ModelCatalog(access, nil)
+	if err != nil {
+		return "", err
+	}
+	logicalModels, err := s.PublicLogicalModels(access, nil)
 	if err != nil {
 		return "", err
 	}
@@ -818,7 +841,10 @@ func (s *Service) prepareCloudAgentMedia(run *model.CloudAgentExecution, state *
 	if err := validateCloudAgentMediaReferences(a.Mode, refs); err != nil {
 		return CreateTaskRequest{}, nil, err
 	}
-	operation := cloudAgentMediaOperation(a.Mode, refs)
+	operation, err := s.resolveCloudAgentMediaOperation(a, refs)
+	if err != nil {
+		return CreateTaskRequest{}, nil, err
+	}
 	if operation == "" {
 		return CreateTaskRequest{}, nil, BadAuthRequest("生成模式尚未实现媒体任务适配器")
 	}

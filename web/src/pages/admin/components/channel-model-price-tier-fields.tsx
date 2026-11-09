@@ -6,6 +6,7 @@ import type { ModelCapabilityChoice as EditableCapability } from "@/components/m
 import type { ChannelModelFormValues as FormValues } from "./channel-model-editor-form";
 import { normalizeUpstreamModelKey } from "./channel-model-price-tier-form";
 import { CreditCostFields } from "./credit-cost-fields";
+import { priceCurrencyUnit } from "@/services/api/user-groups";
 import { Select } from "@/components/ui/base/select";
 import { ImageParameterInput } from "@/components/image-parameter-fields";
 import { imageResolutionTiers } from "@/lib/image-size-presets";
@@ -34,6 +35,7 @@ export function PriceTierFields({
     onRemove: () => void;
 }) {
     const billingMode = Form.useWatch(["priceTiers", index, "billingMode"], form) || "fixed_request";
+    const priceUnit = priceCurrencyUnit(Form.useWatch("priceCurrency", form));
     const matchMode = Form.useWatch(["priceTiers", index, "matchMode"], form) || "default";
     const priceConfigured = Form.useWatch(["priceTiers", index, "priceConfigured"], form) !== false;
     const tierEnabled = Form.useWatch(["priceTiers", index, "enabled"], form) !== false;
@@ -49,6 +51,9 @@ export function PriceTierFields({
     const isAudio = capability === "audio";
     const isDurationPriced = isVideo || isAudio;
     const isImage = capability === "image";
+    const referenceVideoBillingValue = Form.useWatch("referenceVideoBilling", form);
+    const referenceVideoBilling = isVideo && referenceVideoBillingValue === true;
+    const referenceVideoPriced = referenceVideoBilling && (billingMode === "per_second" || billingMode === "token");
     return (
         <article className="admin-price-tier-card">
             <header className="admin-price-tier-card-header">
@@ -164,7 +169,7 @@ export function PriceTierFields({
                         <div className="admin-price-tier-panel-heading">
                             <div>
                                 <h3>销售价格</h3>
-                                <p>设置用户完成一次生成实际消耗的积分。</p>
+                                <p>{priceUnit === "积分" ? "设置用户完成一次生成实际消耗的积分。" : `按 ${priceUnit} 填写售价，扣费时按用户分组兑换比例换算为积分。`}</p>
                             </div>
                         </div>
                         <div className="admin-price-tier-billing-grid">
@@ -180,35 +185,65 @@ export function PriceTierFields({
                             </Form.Item>
                             {billingMode === "token" ? (
                                 isVideo ? (
-                                    <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "outputTokenPrice"]} label="积分 / 百万视频 Token" rules={[{ required: true, message: "请输入视频 Token 价格" }]}>
+                                    <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "outputTokenPrice"]} label={`${priceUnit} / 百万视频 Token`} rules={[{ required: true, message: "请输入视频 Token 价格" }]}>
                                         <InputNumber className="w-full" min={0} max={1_000_000} precision={6} step={0.1} />
                                     </Form.Item>
                                 ) : (
                                     <div className="admin-price-tier-token-grid">
-                                        <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "inputTokenPrice"]} label="输入 / 百万 Token" rules={[{ required: true, message: "请输入输入 Token 价格" }]}>
+                                        <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "inputTokenPrice"]} label={`输入 ${priceUnit} / 百万 Token`} rules={[{ required: true, message: "请输入输入 Token 价格" }]}>
                                             <InputNumber className="w-full" min={0} max={1_000_000} precision={6} step={0.1} />
                                         </Form.Item>
-                                        <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "outputTokenPrice"]} label="输出 / 百万 Token" rules={[{ required: true, message: "请输入输出 Token 价格" }]}>
+                                        <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "outputTokenPrice"]} label={`输出 ${priceUnit} / 百万 Token`} rules={[{ required: true, message: "请输入输出 Token 价格" }]}>
                                             <InputNumber className="w-full" min={0} max={1_000_000} precision={6} step={0.1} />
                                         </Form.Item>
-                                        <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "cachedTokenPrice"]} label="缓存 / 百万 Token" rules={[{ required: true, message: "请输入缓存 Token 价格" }]}>
+                                        <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "cachedTokenPrice"]} label={`缓存命中 ${priceUnit} / 百万 Token`} rules={[{ required: true, message: "请输入缓存命中价格" }]}>
+                                            <InputNumber className="w-full" min={0} max={1_000_000} precision={6} step={0.1} />
+                                        </Form.Item>
+                                        <Form.Item
+                                            className="admin-price-tier-unit-price mb-0"
+                                            name={[index, "cacheWriteTokenPrice"]}
+                                            label={`缓存写入 ${priceUnit} / 百万 Token`}
+                                            tooltip="创建提示词缓存的输入 Token（如 Claude cache_creation）。0 表示不单独收费；预授权按输入价与缓存写入价中较高者估算。"
+                                            rules={[{ required: true, message: "请输入缓存写入价格" }]}
+                                        >
                                             <InputNumber className="w-full" min={0} max={1_000_000} precision={6} step={0.1} />
                                         </Form.Item>
                                     </div>
                                 )
                             ) : (
-                                <Form.Item className="admin-price-tier-unit-price mb-0" name={[index, "unitPrice"]} label={billingMode === "per_second" ? "每秒消耗积分" : "每次消耗积分"} rules={[{ required: true, message: "请输入积分价格" }]}>
+                                <Form.Item
+                                    className="admin-price-tier-unit-price mb-0"
+                                    name={[index, "unitPrice"]}
+                                    label={billingMode === "per_second" ? `每秒售价（${priceUnit}）` : `每次售价（${priceUnit}）`}
+                                    rules={[{ required: true, message: "请输入售价" }]}
+                                >
                                     <InputNumber className="w-full" min={0} max={1_000_000} precision={6} step={0.1} />
                                 </Form.Item>
                             )}
                         </div>
+                        {referenceVideoPriced ? (
+                            <div className="admin-price-tier-billing-grid">
+                                <Form.Item
+                                    className="admin-price-tier-unit-price mb-0"
+                                    name={[index, billingMode === "token" ? "referenceVideoOutputTokenPrice" : "referenceVideoUnitPrice"]}
+                                    label={billingMode === "token" ? `带参考视频 ${priceUnit} / 百万视频 Token` : `带参考视频每秒售价（${priceUnit}）`}
+                                    tooltip={billingMode === "token" ? "挂参考视频的请求按含参考视频时长的 Token 用量乘以此价格；不挂参考视频仍用上方价格。" : "挂参考视频的请求按（生成秒数 + 后端实测参考视频秒数）乘以此价格；不挂参考视频仍用上方价格。"}
+                                    rules={[{ required: true, message: "请输入带参考视频的价格" }]}
+                                >
+                                    <InputNumber className="w-full" min={0} max={1_000_000} precision={6} step={0.1} />
+                                </Form.Item>
+                            </div>
+                        ) : null}
                         {isVideo && billingMode === "token" ? (
                             <div className="admin-price-tier-helper" role="note">
                                 <strong>视频 Token 计费</strong>
-                                <span>估算：宽 × 高 × 24 帧/秒 ×（输出时长 + 参考视频时长）÷ 1024；优先按上游有效用量结算，无用量时使用公式，授权预留 10% 会在结算后补扣或退回。</span>
+                                <span>
+                                    {referenceVideoBilling ? "估算：宽 × 高 × 24 帧/秒 ×（输出时长 + 参考视频时长）÷ 1024；挂参考视频时按带参考视频价格计费。" : "估算：宽 × 高 × 24 帧/秒 × 输出时长 ÷ 1024；参考视频不计费。"}
+                                    优先按上游有效用量结算，无用量时使用公式，授权预留 10% 会在结算后补扣或退回。
+                                </span>
                             </div>
                         ) : null}
-                        <CreditCostFields index={index} form={form} billingMode={billingMode} isVideo={isVideo} />
+                        <CreditCostFields index={index} form={form} billingMode={billingMode} isVideo={isVideo} referenceVideoBilling={referenceVideoBilling} />
                     </section>
                 </div>
                 {staleTierUpstream ? (

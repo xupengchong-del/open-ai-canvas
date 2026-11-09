@@ -11,6 +11,16 @@ const (
 )
 
 type (
+	SaveEcommerceProjectRequest            = app.SaveEcommerceProjectRequest
+	EcommerceCreativeDirectionsRequest     = app.EcommerceCreativeDirectionsRequest
+	EcommerceStyleChoice                   = app.EcommerceStyleChoice
+	EcommerceAgentSetting                  = app.EcommerceAgentSetting
+	EcommerceOrchestrationSetting          = app.EcommerceOrchestrationSetting
+	EcommerceCreativeDirection             = app.EcommerceCreativeDirection
+	EcommerceCreativeDirectionsResponse    = app.EcommerceCreativeDirectionsResponse
+	EcommerceCreativeDirectionSelection    = app.EcommerceCreativeDirectionSelection
+	EcommerceKnowledgeEvidence             = app.EcommerceKnowledgeEvidence
+	DeleteEcommerceProjectsRequest         = app.DeleteEcommerceProjectsRequest
 	BindProjectAssetImageRequest           = app.BindProjectAssetImageRequest
 	PaymentOrderQuery                      = app.PaymentOrderQuery
 	PaymentReconciliationQuery             = app.PaymentReconciliationQuery
@@ -37,6 +47,8 @@ type (
 	APICallLogQuery                        = app.APICallLogQuery
 	AccountFileStorageUsage                = app.AccountFileStorageUsage
 	AdminAppearanceSetting                 = app.AdminAppearanceSetting
+	AdminStorageGrantRequest               = app.AdminStorageGrantRequest
+	AdminUserStorage                       = app.AdminUserStorage
 	AdminAuditPage                         = app.AdminAuditPage
 	AdminCacheClearGroupResult             = app.AdminCacheClearGroupResult
 	AdminCacheClearRequest                 = app.AdminCacheClearRequest
@@ -89,6 +101,11 @@ type (
 	AppearanceSkinModeTokens               = app.AppearanceSkinModeTokens
 	AppearanceSkinTheme                    = app.AppearanceSkinTheme
 	AppearanceSkinTokens                   = app.AppearanceSkinTokens
+	AdminArkGroupCreateRequest             = app.AdminArkGroupCreateRequest
+	AdminArkGroupQuery                     = app.AdminArkGroupQuery
+	AdminArkGroupUpdateRequest             = app.AdminArkGroupUpdateRequest
+	ArkAssetUploadInput                    = app.ArkAssetUploadInput
+	ArkGroupInput                          = app.ArkGroupInput
 	ArkPrivateAssetSettingRequest          = app.ArkPrivateAssetSettingRequest
 	ArkPrivateAssetSyncResult              = app.ArkPrivateAssetSyncResult
 	AssetCandidateInput                    = app.AssetCandidateInput
@@ -296,6 +313,11 @@ type (
 	RuntimeResourcePolicy                  = app.RuntimeResourcePolicy
 	RuntimeTaskPolicy                      = app.RuntimeTaskPolicy
 	Service                                = app.Service
+	AdminSkillListRequest                  = app.AdminSkillListRequest
+	AdminSkillItem                         = app.AdminSkillItem
+	AdminSkillList                         = app.AdminSkillList
+	AdminSkillInfoRequest                  = app.AdminSkillInfoRequest
+	AdminSkillPackageEditResult            = app.AdminSkillPackageEditResult
 	ShotRevisionInput                      = app.ShotRevisionInput
 	SkillCategory                          = app.SkillCategory
 	SkillLibraryCategory                   = app.SkillLibraryCategory
@@ -311,6 +333,9 @@ type (
 	SkillListRequest                       = app.SkillListRequest
 	SkillMutationRequest                   = app.SkillMutationRequest
 	SkillPackageBundle                     = app.SkillPackageBundle
+	SkillPackageEditRequest                = app.SkillPackageEditRequest
+	SkillPackageEditResult                 = app.SkillPackageEditResult
+	SkillPackageFileOperation              = app.SkillPackageFileOperation
 	SkillPackageBundleFile                 = app.SkillPackageBundleFile
 	SkillPackageFileContent                = app.SkillPackageFileContent
 	SkillPackageFileItem                   = app.SkillPackageFileItem
@@ -346,6 +371,7 @@ type (
 	TextReplayResult                       = app.TextReplayResult
 	TimelineRenderCreateRequest            = app.TimelineRenderCreateRequest
 	TimelineTranscriptionCreateRequest     = app.TimelineTranscriptionCreateRequest
+	RevokeStorageGrantRequest              = app.RevokeStorageGrantRequest
 	TopupProductRequest                    = app.TopupProductRequest
 	UpdateAnnouncementRequest              = app.UpdateAnnouncementRequest
 	UpdateBannerAnnouncementRequest        = app.UpdateBannerAnnouncementRequest
@@ -358,6 +384,10 @@ type (
 	UpdateProjectRequest                   = app.UpdateProjectRequest
 	UpdateProjectUnitRequest               = app.UpdateProjectUnitRequest
 	UpdateUserRequest                      = app.UpdateUserRequest
+	UserGroupRequest                       = app.UserGroupRequest
+	UserGroupView                          = app.UserGroupView
+	PublicUserGroup                        = app.PublicUserGroup
+	PaymentSettings                        = app.PaymentSettings
 	UpdateWorkflowStepRequest              = app.UpdateWorkflowStepRequest
 	WorkbenchToolInput                     = app.WorkbenchToolInput
 	WorkbenchPresetInput                   = app.WorkbenchPresetInput
