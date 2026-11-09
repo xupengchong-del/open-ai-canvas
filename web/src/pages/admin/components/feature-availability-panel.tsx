@@ -557,6 +557,7 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         inspirationSourcesVisible: record.inspirationSourcesVisible as boolean,
         imageWorkbenchEnabled: record.imageWorkbenchEnabled as boolean,
         videoWorkbenchEnabled: record.videoWorkbenchEnabled as boolean,
+        batchVideoEnabled: typeof record.batchVideoEnabled === "boolean" ? record.batchVideoEnabled : true,
         ecommerceEnabled: record.ecommerceEnabled as boolean,
         ecommerceVideoEnabled: record.ecommerceVideoEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"yingce/backend/internal/database"
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
 
@@ -21,18 +22,10 @@ func newBatchVideoConsistencyService(t *testing.T) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.AutoMigrate(database.Models()...); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.AutoMigrate(
-		&model.Resource{},
-		&model.SystemSetting{},
-		&model.ChannelModel{},
-		&model.ModelChannel{},
-		&model.Task{},
-		&model.TaskLog{},
-		&model.Result{},
-		&model.TaskTextDelta{},
-		&model.ApiCallLog{},
-		&model.Asset{},
-		&model.CanvasProject{},
 		&model.BatchVideoProject{},
 		&model.BatchVideoMaterialBatch{},
 		&model.BatchVideoSellingPoint{},
@@ -45,6 +38,11 @@ func newBatchVideoConsistencyService(t *testing.T) *Service {
 		&model.BatchVideoStandardValidation{},
 	); err != nil {
 		t.Fatal(err)
+	}
+	for _, id := range []string{"user", "other", "user-1"} {
+		if err := db.Create(&model.User{ID: id, Username: id, Role: model.UserRoleAdmin, Status: model.UserStatusActive}).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	return &Service{repo: repository.New(db)}
 }

@@ -1,6 +1,5 @@
-import { Blocks, CircleDollarSign, Clapperboard, Film, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, WandSparkles } from "lucide-react";
 // label 是中文源文案（用于搜索与兜底），界面显示用 labelKey 经 i18n 翻译。
-import { Blocks, CircleDollarSign, Clapperboard, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, PenTool } from "lucide-react";
+import { Blocks, CircleDollarSign, Clapperboard, Film, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, PenTool } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -15,12 +14,6 @@ export const navigationTools = [
         label: "短剧创作",
         labelKey: "nav.tools.projects",
         icon: Clapperboard,
-        section: "创作空间",
-    },
-    {
-        slug: "batch-video",
-        label: "批量生成视频",
-        icon: Film,
         section: "创作空间",
     },
     {
@@ -71,6 +64,13 @@ export const navigationTools = [
         labelKey: "nav.tools.settings",
         icon: Settings,
         section: "工作台管理",
+    },
+    {
+        slug: "batch-video",
+        label: "批量生成视频",
+        labelKey: "nav.tools.batchVideo",
+        icon: Film,
+        section: "创作空间",
     },
 ] as const;
 

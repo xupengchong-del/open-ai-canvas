@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 99
+const CurrentSchemaVersion int64 = 100
 
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
@@ -340,20 +340,22 @@ var schemaMigrations = []migration{
 		return nil
 	}},
 
-	// ---- 本地扩展迁移（batch_video / generated_asset，自原 v62-v68 迁移编号后移）----
-	{version: 93, name: "batch_video_production", checksum: batchVideoProductionChecksum, apply: migrateBatchVideoProduction},
-	{version: 94, name: "batch_video_reference_generation", checksum: batchVideoReferenceGenerationChecksum, apply: func(tx *gorm.DB) error {
+	// ---- 本地扩展迁移（原 v61-v68 后移，避开上游 v61-v92）----
+	// checksum 保持本机原值，NAS 库只需改版本号，不需要改校验和。
+	{version: 93, name: channelModelUpstreamPriceNoteMigrationName, checksum: channelModelUpstreamPriceNoteChecksum, apply: migrateChannelModelUpstreamPriceNote},
+	{version: 94, name: "batch_video_production", checksum: batchVideoProductionChecksum, apply: migrateBatchVideoProduction},
+	{version: 95, name: "batch_video_reference_generation", checksum: batchVideoReferenceGenerationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoReferenceAsset{})
 	}},
-	{version: 95, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v95", apply: func(tx *gorm.DB) error {
+	{version: 96, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v64", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{}, &model.BatchVideoAttempt{})
 	}},
-	{version: 96, name: "batch_video_start_schedule_priority", checksum: "sha256:batch-video-start-schedule-priority-v96", apply: func(tx *gorm.DB) error {
+	{version: 97, name: "batch_video_start_schedule_priority", checksum: "sha256:batch-video-start-schedule-priority-v65", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{})
 	}},
-	{version: 97, name: "batch_video_per_image_analysis", checksum: "sha256:batch-video-per-image-analysis-v97", apply: migrateBatchVideoPerImageAnalysis},
-	{version: 98, name: "generated_asset_titles", checksum: generatedAssetTitlesChecksum, apply: migrateGeneratedAssetTitles},
-	{version: 99, name: "generated_asset_order", checksum: generatedAssetOrderChecksum, apply: migrateGeneratedAssetOrder},
+	{version: 98, name: "batch_video_per_image_analysis", checksum: "sha256:batch-video-per-image-analysis-v66", apply: migrateBatchVideoPerImageAnalysis},
+	{version: 99, name: "generated_asset_titles", checksum: generatedAssetTitlesChecksum, apply: migrateGeneratedAssetTitles},
+	{version: 100, name: "generated_asset_order", checksum: generatedAssetOrderChecksum, apply: migrateGeneratedAssetOrder},
 
 }
 
@@ -1240,7 +1242,7 @@ func normalizeLegacyUpstreamPriceNoteMigration(tx *gorm.DB) error {
 	result := tx.Model(&schemaMigration{}).
 		Where("version = ? AND name = ? AND checksum = ?", legacy.Version, legacy.Name, legacy.Checksum).
 		Updates(map[string]any{
-			"version":  61,
+			"version":  93,
 			"name":     channelModelUpstreamPriceNoteMigrationName,
 			"checksum": channelModelUpstreamPriceNoteChecksum,
 		})

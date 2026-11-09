@@ -54,7 +54,7 @@ func stubOSSForProviderCopy(t *testing.T) (*[]string, *[]string) {
 	return &puts, &deletes
 }
 
-func seedLocalVideoResource(t *testing.T, svc *Service) *model.Resource {
+func seedLocalVideoResourceForCopy(t *testing.T, svc *Service) *model.Resource {
 	t.Helper()
 	data := mediaTestMP4()
 	objectKey := "users/user-1/video/2026/10/29/clip.mp4"
@@ -80,7 +80,7 @@ func TestProviderVisibleURLDerivesObjectStorageCopyForLocalVideo(t *testing.T) {
 	svc, _ := newMediaRecoveryTestService(t)
 	seedOSSWithPublicBase(t, svc, "https://192.168.1.56:3050")
 	puts, _ := stubOSSForProviderCopy(t)
-	resource := seedLocalVideoResource(t, svc)
+	resource := seedLocalVideoResourceForCopy(t, svc)
 
 	first, err := svc.providerVisibleResourceURL("user-1", resource)
 	if err != nil {
@@ -120,7 +120,7 @@ func TestProviderVisibleURLRequiresObjectStorageForLocalVideo(t *testing.T) {
 		t.Fatal(err)
 	}
 	puts, _ := stubOSSForProviderCopy(t)
-	resource := seedLocalVideoResource(t, svc)
+	resource := seedLocalVideoResourceForCopy(t, svc)
 
 	_, err = svc.providerVisibleResourceURL("user-1", resource)
 	if err == nil || !strings.Contains(err.Error(), "对象存储") {
@@ -135,7 +135,7 @@ func TestDeleteStoredResourceObjectRemovesDerivedCopy(t *testing.T) {
 	svc, _ := newMediaRecoveryTestService(t)
 	seedSystemOSSStorageTarget(t, svc, storage.VideoStorageTargetLocal)
 	_, deletes := stubOSSForProviderCopy(t)
-	resource := seedLocalVideoResource(t, svc)
+	resource := seedLocalVideoResourceForCopy(t, svc)
 
 	if _, err := svc.providerVisibleResourceURL("user-1", resource); err != nil {
 		t.Fatalf("providerVisibleResourceURL() error = %v", err)
