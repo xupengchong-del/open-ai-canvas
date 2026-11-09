@@ -214,3 +214,122 @@ export function conversationTimestamp(value: string) {
     const timestamp = new Date(value).getTime();
     return Number.isFinite(timestamp) ? timestamp : 0;
 }
+
+/**
+ * 一条「生成记录」= 一条用户提示 + 其后到下一次用户提示之前的全部结果消息。
+ * 传入记录内任意一条消息 id；结果消息前没有用户提示的异常数据只算它自己。
+ */
+export function creationRecordRange(messages: CreationMessage[], messageId: string): { start: number; end: number } | null {
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return null;
+    let start = index;
+    while (start > 0 && messages[start].role !== "user") start -= 1;
+    if (messages[start].role !== "user") return { start: index, end: index + 1 };
+    let end = start + 1;
+    while (end < messages.length && messages[end].role !== "user") end += 1;
+    return { start, end };
+}
+
+/** 从会话中移除一整条生成记录（提示词与它的结果）；素材库中的原素材不受影响。 */
+export function removeCreationRecord(messages: CreationMessage[], messageId: string): { messages: CreationMessage[]; removed: CreationMessage[] } | null {
+    const range = creationRecordRange(messages, messageId);
+    if (!range) return null;
+    return {
+        messages: [...messages.slice(0, range.start), ...messages.slice(range.end)],
+        removed: messages.slice(range.start, range.end),
+    };
+}
+
+// 自动恢复要处理的是后端原始任务，可能只有 resultJson、没有本地投影出的 creationResult* 字段，
+// 因此这里用比 reconcile 更宽松的解析，避免把「其实已成功」的任务判成没有结果。
+function autoRecoverTaskResultUrls(task: GenerationTask): string[] {
+    const fromProps = (task as PersistedCreationTask).creationResultUrls;
+    if (fromProps?.length) return fromProps;
+    if (task.previewUrl) return [task.previewUrl];
+    if (task.resultJson) {
+        try {
+            const parsed = JSON.parse(task.resultJson);
+            if (parsed.video?.url || parsed.video?.dataUrl) return [parsed.video.url || parsed.video.dataUrl];
+            if (Array.isArray(parsed.images) && parsed.images.length) {
+                const urls = parsed.images
+                    .map((img: { url?: string; dataUrl?: string }) => img.url || img.dataUrl)
+                    .filter(Boolean);
+                if (urls.length) return urls;
+            }
+        } catch {
+            // 结果体不是合法 JSON 时按「没有结果」处理，交给任务终态收敛。
+        }
+    }
+    return [];
+}
+
+function autoRecoverTaskResultStorageKeys(task: GenerationTask): string[] {
+    const fromProps = (task as PersistedCreationTask).creationResultStorageKeys;
+    if (fromProps?.length) return fromProps;
+    if (task.resultJson) {
+        try {
+            const parsed = JSON.parse(task.resultJson);
+            if (parsed.video?.storageKey) return [parsed.video.storageKey];
+            if (Array.isArray(parsed.images) && parsed.images.length) {
+                const keys = parsed.images.map((img: { storageKey?: string }) => img.storageKey).filter(Boolean);
+                if (keys.length) return keys;
+            }
+        } catch {
+            // 同上：解析失败时不做恢复判断。
+        }
+    }
+    return [];
+}
+
+/**
+ * 页面水合阶段的深度恢复：会话里有「生成中」或「失败」的助手消息时，
+ * 直接拿它们的任务 ID 与后端最近的已完成任务比对；后端其实已经出片就静默挂回结果，
+ * 用户不需要重新排队生成，也不会被误判成失败。
+ */
+export function autoRecoverCreationMessages(
+    conversations: CreationConversation[],
+    recentTasks: GenerationTask[],
+): { conversations: CreationConversation[]; recoveredCount: number } {
+    const succeededTasks = recentTasks.filter((task) => task.status === "succeeded");
+    if (!succeededTasks.length) return { conversations, recoveredCount: 0 };
+    let recoveredCount = 0;
+
+    const next = conversations.map((conversation) => {
+        let conversationChanged = false;
+        const messages = conversation.messages.map((message) => {
+            if (message.role !== "assistant" || (message.status !== "pending" && message.status !== "error")) {
+                return message;
+            }
+            const targetTaskIds = new Set(message.taskIds || []);
+            const matchedTask = succeededTasks.find(
+                (task) =>
+                    targetTaskIds.has(task.id) ||
+                    Boolean(task.retryOf && targetTaskIds.has(task.retryOf)) ||
+                    Boolean(task.attemptGroupId && targetTaskIds.has(task.attemptGroupId)) ||
+                    Boolean(task.clientContext?.messageId && task.clientContext.messageId === message.id),
+            );
+            if (!matchedTask) return message;
+
+            const resultUrls = autoRecoverTaskResultUrls(matchedTask);
+            const resultStorageKeys = autoRecoverTaskResultStorageKeys(matchedTask);
+            if (!resultUrls.length && !resultStorageKeys.length) return message;
+
+            conversationChanged = true;
+            recoveredCount += 1;
+            return {
+                ...message,
+                status: "done" as const,
+                content: message.mode === "video" ? "视频已生成" : "图片已生成",
+                error: undefined,
+                errorKind: undefined,
+                syncInterrupted: undefined,
+                resultUrls,
+                resultStorageKeys,
+                taskIds: Array.from(new Set([...(message.taskIds || []), matchedTask.id])),
+            };
+        });
+        return conversationChanged ? { ...conversation, messages, updatedAt: new Date().toISOString() } : conversation;
+    });
+
+    return { conversations: recoveredCount > 0 ? next : conversations, recoveredCount };
+}

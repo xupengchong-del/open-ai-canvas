@@ -5,6 +5,19 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 合并上游 v1.8.3 与本地扩展
+
+- 已实现：本地 `local/daily` 合并上游 `upstream/main`（v1.8.3，`ee6c0ee2`），保留本地 54 个提交的功能。合并提交双父：`5dca3c56` + 融合修复 `84686321`。
+- 迁移编号：本地 8 个迁移从 v61-v68 后移到 v93-v100（`channel_model_upstream_price_note`、`batch_video_*`、`generated_asset_*`），`CurrentSchemaVersion = 100`；checksum 保持原值，腾出 v61-v92 给上游 32 个迁移（drama、电商等）执行。
+- 存储策略（重点保真）：`uploadForcesLocalStorage`、`isGeneratedVisualStorageTargetLocal`、`VideoStorageTargetLocal/OSS`、`storeTaskMediaFile` 的 `forceLocal` 参数与 `task_render`/`resource_store`/`task_media_recovery` 调用链全部保留；同时融合上游 `fallbackCause` 兜底（对象存储写失败落本地并登记补传任务）。
+- 创作页补回两个本地功能：`autoRecoverCreationMessages`（水合时把后端已成功但页面显示「生成中/失败」的消息静默恢复结果）与 `removeCreationRecord`（逐条删除生成记录，素材保留、本页在跑的任务先取消、有产物时弹确认框）。
+- 已验证：`go build ./...`、`go test ./...`（42 包）、`tsc --noEmit`（0 错误）、`bun run build` 通过；新增 `web/test/creation-auto-recover.test.ts`（6 例）与恢复 `web/test/creation-record-delete.test.ts`（7 例）均通过。
+- [ ] 用户验收：创作页刷新后，历史「生成中/失败」消息能自动恢复成正确结果，不重复扣费。
+- [ ] 用户验收：生成记录上的删除按钮可用；含产物时弹红色确认框，删除后素材库原素材仍在。
+- [ ] 用户验收：后台「存储服务 → 生成结果存储策略」在 `local` / `oss` 之间切换后，图片和视频按策略落盘，素材库卡片存储位置标识正确。
+- [ ] 部署前必做：在 NAS 数据库执行迁移改号 SQL（`v61-v68 → v93-v100`，见 `.local/merge-conflicts/nas-migration-renumber.sql`），否则新版启动时 v61 名称校验失败。
+- 未回补：前端部分页面采用上游 v1.8.3 基线，本地少量 UI 定制细节（如个别按钮文案、局部样式）未逐条恢复；CSS 已用层叠追加保住本地原有规则。
+
 ## 生成图片与视频的本地存储策略
 
 - 已实现：后台「存储服务 → 生成结果存储策略」在 `local` 时同时覆盖生成的视频和图片，`oss` 时两者仍上传对象存储；生成的音频不受该选项影响。上传的参考素材继续按全局存储位置处理。

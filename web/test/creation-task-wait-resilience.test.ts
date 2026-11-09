@@ -34,6 +34,7 @@ test("页面卸载不再把后台仍在执行的任务写成失败或已停止",
     // 卸载用独立标记记录，避免与用户主动「停止」共用同一个 abort 判定。
     expect(source).toContain("unmountedRef.current = true");
     const unmountEffect = sourceSection(source, "const unmountedRef = useRef(false);", "useEffect(() => {");
+    expect(unmountEffect).toContain("unmountedRef.current = true");
     expect(unmountEffect).toContain("abortRef.current?.abort()");
 
     // 卸载导致的取消：只要任务已经建出来（boundTaskIds 非空），就必须保留 pending
@@ -60,9 +61,13 @@ test("上一条任务等待结果时，输入框和有效的再次生成操作�
 
     // 提交忙碌态在任务创建后结束；待生成消息本身不能锁住输入框或按钮。
     expect(source).toContain("const interactionBusy = props.busy || props.referenceReplacementBusy;");
+    // 输入框与提交闸门只看提交锁，不能被「上一条还在生成」锁住。
+    expect(source).toContain("const canSubmit = Boolean(props.prompt.trim()) && !interactionBusy;");
     expect(source).toContain("spellCheck disabled={interactionBusy}");
     expect(source).toContain("disabled={interactionBusy || !canSubmit}");
-    expect(source).not.toContain("props.generationActive");
+    // generationActive 只允许影响按钮外观（转圈/发光），不得进入 interactionBusy 或 canSubmit。
+    expect(source).not.toContain("const interactionBusy = props.busy || props.referenceReplacementBusy || props.generationActive");
+    expect(source).not.toContain("const canSubmit = Boolean(props.prompt.trim()) && !interactionBusy && !props.generationActive");
 });
 
 test("页面水合阶段通过 autoRecoverCreationMessages 全自动静默恢复成功产物", () => {
@@ -70,8 +75,8 @@ test("页面水合阶段通过 autoRecoverCreationMessages 全自动静默恢复
     const conversationsSource = compactSource(moduleGroupSource("pages/create/creation-conversations.ts"));
 
     // 水合加载时直接调用 autoRecoverCreationMessages 并持久化
-    expect(source).toContain("autoRecoverCreationMessages(next, recentTasks)");
-    expect(source).toContain("void saveCreationConversations(next)");
+    expect(source).toContain("autoRecoverCreationMessages(conversationsRef.current, recentTasks)");
+    expect(source).toContain("void saveCreationConversations(recovery.conversations)");
 
     // autoRecoverCreationMessages 实现必须直接提取产物并翻转为 done
     expect(conversationsSource).toContain("export function autoRecoverCreationMessages");

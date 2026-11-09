@@ -3,7 +3,7 @@
 import { conversationTimeFormatter, type CreationMessage } from "./creation-types";
 import { creationMessageNeedsResultSync } from "./creation-conversations";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
-import { AlertCircle, AlertTriangle, CircleStop, CloudOff, Copy, Download, FileText, Film, Image as ImageIcon, ImageOff, Maximize2, Music2, Pencil, RefreshCw, RotateCcw, UserRound, X, type LucideIcon, Blocks, Orbit } from "lucide-react";
+import { AlertCircle, AlertTriangle, CircleStop, CloudOff, Copy, Download, FileText, Film, Image as ImageIcon, ImageOff, Maximize2, Music2, Pencil, RefreshCw, RotateCcw, UserRound, Trash2, X, type LucideIcon, Blocks, Orbit } from "lucide-react";
 import { GenerationToolCard, type GenerationToolStatus } from "@/components/ai/generation-tool-card";
 import { GenerationPhaseSteps } from "@/components/ai/generation-phase-steps";
 import { MessageReasoning } from "@/components/ai/message-reasoning";
@@ -40,6 +40,7 @@ export function CreationMessageView({
     refreshingResult = false,
     onCreateVariant,
     onEditUserMessage,
+    onDeleteRecord,
     onContinueCanvas,
     openingCanvas,
 }: {
@@ -51,11 +52,12 @@ export function CreationMessageView({
     refreshingResult?: boolean;
     onCreateVariant: () => void;
     onEditUserMessage: (text: string) => void;
+    onDeleteRecord: () => void;
     onContinueCanvas: (ids?: string[]) => void;
     openingCanvas: boolean;
 }) {
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
-    if (item.role === "user") return <CreationUserMessage item={item} shotNumber={shotNumber} onEditUserMessage={onEditUserMessage} />;
+    if (item.role === "user") return <CreationUserMessage item={item} shotNumber={shotNumber} onEditUserMessage={onEditUserMessage} onDeleteRecord={onDeleteRecord} />;
     const mode = item.mode || "text";
     const messageState = creationMessageState(item);
     const stateChip = messageState ? (
@@ -180,7 +182,7 @@ function CreationSyncNotice({ refreshing, onRefresh, onRetry }: { refreshing: bo
     );
 }
 
-export function CreationUserMessage({ item, shotNumber, onEditUserMessage }: { item: CreationMessage; shotNumber: number; onEditUserMessage: (text: string) => void }) {
+export function CreationUserMessage({ item, shotNumber, onEditUserMessage, onDeleteRecord }: { item: CreationMessage; shotNumber: number; onEditUserMessage: (text: string) => void; onDeleteRecord?: () => void }) {
     const [previewUrl, setPreviewUrl] = useState("");
     const [previewType, setPreviewType] = useState<"image" | "video">("image");
     const copyText = useCopyText();
@@ -255,6 +257,13 @@ export function CreationUserMessage({ item, shotNumber, onEditUserMessage }: { i
                         <Pencil />
                     </button>
                 </Tooltip>
+                {onDeleteRecord ? (
+                    <Tooltip title="删除这条生成记录">
+                        <button type="button" className="creation-user-message-delete" aria-label="删除这条生成记录" onClick={onDeleteRecord}>
+                            <Trash2 />
+                        </button>
+                    </Tooltip>
+                ) : null}
             </div>
             <CreationMediaPreviewModal url={previewUrl} type={previewType} onClose={() => setPreviewUrl("")} />
         </article>

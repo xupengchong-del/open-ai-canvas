@@ -22756,6 +22756,10 @@ html:not(.dark) .creation-home .creation-user-avatar {
     width: 15px;
     height: 15px;
 }
+/* 删除整条生成记录是破坏性操作，hover 用危险色与编辑/复制按钮区分。 */
+.creation-home .creation-user-message-actions button.creation-user-message-delete:hover {
+    color: var(--s-danger, #d9534f);
+}
 .creation-home .creation-user-message-actions button:hover {
     background: var(--creation-surface-hover);
     color: var(--creation-text);

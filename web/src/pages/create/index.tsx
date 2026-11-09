@@ -20,7 +20,7 @@ import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, vid
 import { inferVideoOperation, modelGroupReferenceLimits, resolveCompatibleModel, mergedImageCapabilityConfig, type ModelRequirements } from "@/lib/model-selection";
 import type { BackendGenerationResult } from "@/services/api/generation-task";
 import type { Skill } from "@/services/api/skills";
-import type { GenerationTask } from "@/services/api/task-center";
+import { cancelGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { loadCreationConversations, pendingCreationTaskIds, removeCreationConversationSnapshot, saveCreationConversations, updateCreationConversationSnapshot } from "@/services/creation-conversation-store";
 import { clearCreationConversationSnapshot, mergeCreationConversationSnapshot, readCreationConversationSnapshot, writeCreationConversationSnapshot } from "@/services/creation-conversation-snapshot";
 import { resolveModelChannel, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
@@ -64,9 +64,11 @@ import { creationLibraryDisabledReason, creationLibrarySelectionToAttachments } 
 import { defaultCreationMode, modeLabels, type CreationConversation, type CreationMessage, type CreationMode, type CreationRetryContext, type CreationSettings, type CreationShotRailEntry, type CreationStatus } from "./creation-types";
 import {
     attachCreationTaskContexts,
+    autoRecoverCreationMessages,
     completedCreationGenerationTask,
     conversationTimestamp,
     creationMessageNeedsResultSync,
+    removeCreationRecord,
     creationShotRail,
     creationVideoShotOrdinal,
     isImageAttachment,
@@ -377,9 +379,25 @@ export default function CreatePage() {
         void loadCreationConversations<CreationConversation>()
             .then((stored) => {
                 if (cancelled || getActiveUserScope() !== scope || (useUserStore.getState().user?.id || null) !== userId) return;
-                const next = cached?.length ? mergeCreationConversationSnapshot(cached, stored || []) : stored?.length ? stored : [newConversation()];
+                let next = cached?.length ? mergeCreationConversationSnapshot(cached, stored || []) : stored?.length ? stored : [newConversation()];
                 conversationsRef.current = next;
                 writeCreationConversationSnapshot(scope, next);
+                // 自动深度恢复：会话里有「生成中」或「失败」的助手消息时，先与后端最近的已完成任务比对；
+                // 只要后端其实已经出片，就静默把结果挂回会话，用户不必重新排队生成。
+                void loadCreationRuntime()
+                    .then((runtime) => runtime.listGenerationTasks(30))
+                    .then((recentTasks) => {
+                        const recovery = autoRecoverCreationMessages(conversationsRef.current, recentTasks);
+                        if (!recovery.recoveredCount) return;
+                        conversationsRef.current = recovery.conversations;
+                        setConversations(recovery.conversations);
+                        void saveCreationConversations(recovery.conversations).catch((error) => {
+                            console.warn("自动恢复的创作记录保存失败", error);
+                        });
+                    })
+                    .catch((error: unknown) => {
+                        console.warn("创作会话自动恢复失败，保留已有状态", error);
+                    });
                 setConversations(next);
                 setActiveId((current) => (next.some((item) => item.id === current) ? current : next[0].id));
                 setConversationScope(scope);
@@ -397,7 +415,16 @@ export default function CreatePage() {
         };
     }, [userId, userSessionHydrated, conversationLoadAttempt]);
 
-    useEffect(() => () => abortRef.current?.abort(), []);
+    // 组件是否已卸载：卸载触发的 abort 与用户主动「停止」必须区分——
+    // 前者后台任务仍在跑，消息要保留 pending 交给恢复监听；后者才是真的取消。
+    const unmountedRef = useRef(false);
+    useEffect(
+        () => () => {
+            unmountedRef.current = true;
+            abortRef.current?.abort();
+        },
+        [],
+    );
 
     useEffect(() => {
         activeIdRef.current = activeId;
@@ -1102,6 +1129,11 @@ export default function CreatePage() {
             updateOriginAssistant((item) => ({ ...item, status: "done" }));
         } catch (error) {
             if (runtime.isGenerationTaskCancelled(error, requestLifecycle.signal)) {
+                // 页面卸载导致的 abort 不能写成「已停止」：任务还在后端跑，写死会变成假失败。
+                // 交给恢复监听接管，刷新回来时由 autoRecoverCreationMessages 挂回结果。
+                if (unmountedRef.current && boundTaskIds.size > 0) {
+                    return;
+                }
                 updateOriginAssistant((item) => ({ ...item, status: "cancelled", content: t("create.status.stopped") }));
                 return;
             }
@@ -1312,6 +1344,49 @@ export default function CreatePage() {
     };
 
     // 作品可能已经生成（页面只是没拿到结果，或仍在重连），或上游超时后费用不确定时，重新生成会提交新任务并再次扣费，先确认。
+    /** 删除一条生成记录（提示词 + 它的结果）。素材保留；本页仍在等待的任务先取消，避免后台继续消耗额度。 */
+    const deleteCreationRecord = (recordId: string) => {
+        const conversation = conversationsRef.current.find((item) => item.id === activeIdRef.current);
+        if (!conversation) return;
+        const trimmed = removeCreationRecord(conversation.messages, recordId);
+        if (!trimmed) return;
+        const removedTaskIds = Array.from(new Set(trimmed.removed.flatMap((item) => item.taskIds || [])));
+        const apply = () => {
+            const next = updateCreationConversationSnapshot(conversationsRef.current, conversation.id, (item) => ({ ...item, messages: trimmed.messages, updatedAt: new Date().toISOString() }));
+            conversationsRef.current = next;
+            setConversations(next);
+            void saveCreationConversations(next).catch((error) => toast.error(error instanceof Error ? error.message : "记录删除保存失败"));
+            for (const taskId of removedTaskIds) {
+                // 只取消本页仍在等待的任务；更早的会话任务可能已经结束，交由任务中心处理。
+                if (!activeGenerationTaskIdsRef.current.delete(taskId)) continue;
+                void cancelGenerationTask(taskId).catch(() => undefined);
+            }
+            toast.success("记录已删除，素材仍保留");
+        };
+        // 只要记录中包含已成功产物（status=done、有结果链接或存储键）或正在生成的任务，必须弹出确认窗口防误删。
+        const hasLiveWork = trimmed.removed.some(
+            (item) =>
+                item.status === "done" ||
+                Boolean(item.resultUrls?.length) ||
+                Boolean(item.resultStorageKeys?.length) ||
+                item.status === "pending" ||
+                item.status === "streaming",
+        );
+        if (!hasLiveWork) {
+            apply();
+            return;
+        }
+        modal.confirm({
+            title: "确定删除这条生成记录？",
+            content: "该记录包含已生成的成果。删除后将从当前会话中移除，但在素材库中仍会保留原素材。此操作不可撤销。",
+            okText: "确定删除",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            centered: true,
+            onOk: apply,
+        });
+    };
+
     const regenerateMessage = (item: CreationMessage, index: number) => {
         const resultMayExist = creationMessageNeedsResultSync(item) || Boolean(item.syncInterrupted && (item.status === "pending" || item.status === "streaming"));
         const costUncertain = item.status === "error" && isGenerationCostUncertainError(item.error);
@@ -1585,6 +1660,7 @@ export default function CreatePage() {
                                                 onCreateVariant={() => createVariant(item, index)}
                                                 onContinueCanvas={(ids) => void continueOnCanvas(ids)}
                                                 openingCanvas={openingCanvas}
+                                                onDeleteRecord={() => deleteCreationRecord(item.id)}
                                                 onEditUserMessage={(text) => {
                                                     setPrompt(text);
                                                     window.requestAnimationFrame(() => composerFocusRef.current?.focus());
