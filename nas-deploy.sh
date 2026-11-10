@@ -314,13 +314,44 @@ if [ ! -f "\$DATA/ops/certs/server.crt" ]; then
   chmod 600 "\$DATA/ops/certs/server.key"
 fi
 
+echo '--- 部署前备份数据库 ---'
+BACKUP="\$DATA/backups/pre-upgrade-\$(date +%Y%m%d-%H%M%S).sql.gz"
+d mkdir -p "\$DATA/backups"
+if compose exec -T postgres pg_dump -U open_ai_canvas -d open_ai_canvas 2>/dev/null | gzip > "\$BACKUP" 2>/dev/null && [ -s "\$BACKUP" ]; then
+  echo "    已备份：\$BACKUP（\$(du -h "\$BACKUP" | cut -f1)）"
+else
+  echo '    备份失败：可选继续，但升级跨越 32 个官方迁移，建议先排查'
+fi
+
 echo '--- 镜像 ---'
 if [ '$FORCE_BUILD' = '1' ] || ! d docker image inspect open-ai-canvas-web:server >/dev/null 2>&1 || [ ! -f "\$DATA/.deployed-sha" ] || [ "\$(cat "\$DATA/.deployed-sha")" != "\$HEAD_SHA" ]; then
-  compose build backend web yingce-agent migrate
+  # NAS 只有约 3.8GB 内存：镜像必须逐个串行构建。
+  # 曾经一次性 compose build 四个服务，BuildKit 并行 + Go 四核 CGO 并行把内存打爆，
+  # 触发 OOM killer 与 swap 抖动，表现为部署期间整机假死、SSH 断连。
+  export COMPOSE_PARALLEL_LIMIT=1
+  AVAIL_MB="\$(free -m | awk '/^Mem:/{print \$7}')"
+  echo "    可用内存：\$AVAIL_MB MB"
+  # 编译并发按可用内存自适应：充足用 2，紧张降到 1，优先保证整机不假死。
+  if [ "\${AVAIL_MB:-0}" -lt 1200 ] 2>/dev/null; then
+    export GO_BUILD_P=1
+    echo '    可用内存偏低，Go 编译并发降为 1'
+  else
+    export GO_BUILD_P="\${GO_BUILD_P:-2}"
+  fi
+  echo '    清理可回收镜像层（不影响正在使用的镜像）'
+  d docker image prune -f >/dev/null 2>&1 || true
+  for target in backend yingce-agent web; do
+    echo "    --- 构建 \$target（串行，限制并发）---"
+    compose build "\$target" || { echo "构建 \$target 失败"; exit 1; }
+    # 每构建完一个就回收中间层与构建缓存，避免磁盘与 page cache 持续累积
+    d docker builder prune -f --filter until=10m >/dev/null 2>&1 || true
+    sync
+  done
   echo "\$HEAD_SHA" > "\$DATA/.deployed-sha"
 else
   echo '    镜像已是当前提交，跳过构建（FORCE_BUILD=1 可强制）'
 fi
+
 
 echo '--- 启动 ---'
 compose up -d --remove-orphans --wait --wait-timeout 900 || {

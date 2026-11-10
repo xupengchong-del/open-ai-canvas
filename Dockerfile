@@ -23,7 +23,9 @@ ENV CANVAS_BUILD_VERSION=${BUILD_VERSION}
 ENV CANVAS_BUILD_COMMIT=${BUILD_COMMIT}
 ENV CANVAS_BUILD_TIME=${BUILD_TIME}
 # 生产镜像只构建云端工作台前端；Agent Runtime 在后端 Worker 中运行。
-RUN bun --bun ./node_modules/vite/bin/vite.js build
+# 构建期限制 Node 堆：小内存机器上 vite 处理上万个模块时默认堆上限过高，容易触发整机 OOM。
+ARG NODE_MAX_OLD_SPACE=2048
+RUN NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE}" bun --bun ./node_modules/vite/bin/vite.js build
 
 # 运行镜像：nginx 托管静态前端，并在 Compose 中把 /api 转发到后端服务。
 FROM nginx:1.27-alpine

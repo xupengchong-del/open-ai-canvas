@@ -6,6 +6,7 @@ services:
       dockerfile: backend/Dockerfile
       args:
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        GO_BUILD_P: ${GO_BUILD_P:-2}
 
   yingce-agent:
     image: open-ai-canvas-yingce-agent:server
@@ -20,6 +21,7 @@ services:
       dockerfile: backend/Dockerfile
       args:
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        GO_BUILD_P: ${GO_BUILD_P:-2}
 
   web:
     image: open-ai-canvas-web:server
