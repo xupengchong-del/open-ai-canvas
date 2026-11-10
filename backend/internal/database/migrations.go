@@ -1270,6 +1270,63 @@ func migrateSchemaV56(tx *gorm.DB) error {
 	return nil
 }
 
+
+// localExtensionMigrationNames 是本机扩展迁移在 v61-v68 时期的名称。
+// 合并上游 v1.8.3 后，v61-v92 让位给官方迁移，本机 8 个迁移后移到 v93-v100。
+var localExtensionMigrationNames = []string{
+	channelModelUpstreamPriceNoteMigrationName,
+	"batch_video_production",
+	"batch_video_reference_generation",
+	"batch_video_validation_retry",
+	"batch_video_start_schedule_priority",
+	"batch_video_per_image_analysis",
+	"generated_asset_titles",
+	"generated_asset_order",
+}
+
+// normalizeLocalExtensionMigrations 把已部署过的本机扩展迁移记录从 v61-v68 后移到 v93-v100。
+// 只改版本号、不动 name/checksum，因此新版 validateMigrationRecord 校验仍会通过；
+// 腾出的 v61-v92 由官方迁移正常执行。函数幂等：只在旧布局存在且新编号未占用时执行。
+func normalizeLocalExtensionMigrations(tx *gorm.DB) error {
+	var legacy schemaMigration
+	err := tx.First(&legacy, "version = ?", 61).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("读取本机扩展迁移记录：%w", err)
+	}
+	if legacy.Name != localExtensionMigrationNames[0] {
+		return nil
+	}
+	var occupied int64
+	if err := tx.Model(&schemaMigration{}).Where("version >= ? AND version <= ?", 93, 100).Count(&occupied).Error; err != nil {
+		return fmt.Errorf("检查本机扩展迁移新编号：%w", err)
+	}
+	if occupied > 0 {
+		return nil
+	}
+	// 逐条校验旧记录确实都是本机迁移，避免误改同名的官方记录。
+	for offset, name := range localExtensionMigrationNames {
+		var record schemaMigration
+		if err := tx.First(&record, "version = ?", 61+int64(offset)).Error; err != nil {
+			return fmt.Errorf("读取本机扩展迁移 %d：%w", 61+offset, err)
+		}
+		if record.Name != name {
+			return nil
+		}
+	}
+	// 目标区间 93-100 完全在原区间 61-68 之外，单条 UPDATE 不会撞主键。
+	result := tx.Exec("UPDATE schema_migrations SET version = version + 32 WHERE version BETWEEN 61 AND 68")
+	if result.Error != nil {
+		return fmt.Errorf("后移本机扩展迁移编号：%w", result.Error)
+	}
+	if result.RowsAffected != 8 {
+		return fmt.Errorf("后移本机扩展迁移影响 %d 行，期望 8 行，拒绝继续启动", result.RowsAffected)
+	}
+	return nil
+}
+
 func MigrateSchema(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		if tx.Dialector.Name() == "postgres" {
@@ -1284,6 +1341,9 @@ func MigrateSchema(db *gorm.DB) error {
 			return err
 		}
 		if err := normalizeLegacyUpstreamPriceNoteMigration(tx); err != nil {
+			return err
+		}
+		if err := normalizeLocalExtensionMigrations(tx); err != nil {
 			return err
 		}
 		plan, err := migrationsForDatabase(tx)
