@@ -32,6 +32,8 @@ const AdminSkillsPage = lazyAdminPage(() => import("@/pages/admin/skills/skills-
 const AdminSkillWorkbenchPage = lazyAdminPage(() => import("@/pages/admin/skills/admin-skill-workbench-page"));
 const AdminPaymentsPage = lazyAdminPage(() => import("@/pages/admin/payments/payments-page"));
 const LogsPage = lazyAdminPage(() => import("@/pages/admin/logs/logs-page"));
+const TaskMonitorPage = lazyAdminPage(() => import("@/pages/admin/tasks/tasks-page"));
+const BatchVideoSettingsPage = lazyAdminPage(() => import("@/pages/admin/batch-video/settings-page"));
 const LoginLogsPage = lazyAdminPage(() => import("@/pages/admin/login-logs/login-logs-page"));
 const EmailLogsPage = lazyAdminPage(() => import("@/pages/admin/email-logs/email-logs-page"));
 const RedemptionCodesPage = lazyAdminPage(() => import("@/pages/admin/redemption-codes/redemption-codes-page"));
@@ -64,6 +66,9 @@ const ImageWorkbenchPage = workspaceRoutePages.imageWorkbench;
 const VideoWorkbenchPage = workspaceRoutePages.videoWorkbench;
 const NotFound = lazy(() => import("@/pages/not-found"));
 const SkillsPage = workspaceRoutePages.skills;
+const BatchVideoListPage = lazy(() => import("@/pages/batch-video"));
+const BatchVideoNewPage = lazy(() => import("@/pages/batch-video/new"));
+const BatchVideoDetailPage = lazy(() => import("@/pages/batch-video/detail"));
 const SkillWorkbenchPage = workspaceRoutePages.skillWorkbench;
 const PluginsPage = workspaceRoutePages.plugins;
 const EagleLibraryPage = workspaceRoutePages.eagleLibrary;
@@ -159,6 +164,30 @@ export const router = createBrowserRouter([
                 element: (
                     <RequireAuth>
                         <RequireFeature feature="taskCenterEnabled">{deferred(<TasksPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            {
+                path: "/batch-video",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="batchVideoEnabled">{deferred(<BatchVideoListPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            {
+                path: "/batch-video/new",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="batchVideoEnabled">{deferred(<BatchVideoNewPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            {
+                path: "/batch-video/:id",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="batchVideoEnabled">{deferred(<BatchVideoDetailPage />)}</RequireFeature>
                     </RequireAuth>
                 ),
             },
@@ -270,6 +299,8 @@ export const router = createBrowserRouter([
                     { path: "credit-operations", element: <CreditOperationsPage /> },
                     { path: "redemption-codes", element: <RedemptionCodesPage /> },
                     { path: "referral", element: <AdminReferralPage /> },
+                    { path: "tasks", element: <TaskMonitorPage /> },
+                    { path: "batch-video", element: <BatchVideoSettingsPage /> },
                     { path: "logs", element: <LogsPage /> },
                     { path: "settings", element: <Navigate to="runtime-policy" replace /> },
                     { path: "settings/appearance", element: <AppearanceSettingsPage /> },

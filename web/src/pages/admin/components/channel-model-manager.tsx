@@ -3,13 +3,14 @@ import { App, Button, Checkbox, Input, Popconfirm, Space } from "antd";
 import { AdminModal } from "@/pages/admin/ui/overlays";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
 import type { ColumnsType } from "antd/es/table";
-import { Copy, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from "lucide-react";
+import { CircleDollarSign, Copy, Pencil, Plus, Power, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
 import { ModelIcon } from "@/components/model-picker";
+import { modelPriorityOf } from "@/lib/model-capabilities";
 import { modelProtocolDefinition, modelProtocolLabel, type ModelProtocol } from "@/lib/model-protocols";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
-import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, setAdminChannelModelEnabled, type AdminChannelModelHealth, type ChannelModel } from "@/services/api/wallet";
+import { deleteAdminChannelModel, deleteAdminChannelModels, fetchAdminChannelModels, importAdminChannelModels, listAdminChannelModels, setAdminChannelModelEnabled, syncAdminChannelModelUpstreamPrices, type AdminChannelModelHealth, type ChannelModel } from "@/services/api/wallet";
 import { ChannelModelHealthCell, channelModelHealthKey } from "./channel-model-health";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { ChannelModelEditor } from "./channel-model-editor";
@@ -35,6 +36,7 @@ export function ChannelModelManager({ channel, onChanged, health, healthLoading 
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState("");
     const [fetching, setFetching] = useState(false);
+    const [syncingPrices, setSyncingPrices] = useState(false);
     const [fetchPreviewOpen, setFetchPreviewOpen] = useState(false);
     const [fetchPreviewModels, setFetchPreviewModels] = useState<string[]>([]);
     const [selectedFetchModels, setSelectedFetchModels] = useState<string[]>([]);
@@ -112,6 +114,20 @@ export function ChannelModelManager({ channel, onChanged, health, healthLoading 
             message.error(error instanceof Error ? error.message : "拉取模型失败");
         } finally {
             setFetching(false);
+        }
+    };
+
+    /** 上游价只写进仅后台可见的备注字段，不影响价格档、售价与启用状态。 */
+    const syncUpstreamPrices = async () => {
+        setSyncingPrices(true);
+        try {
+            const result = await syncAdminChannelModelUpstreamPrices(channel.id);
+            await reload();
+            message.success(result.updated > 0 ? `已更新 ${result.updated} 个模型的上游价` : "上游价没有变化");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "同步上游价失败");
+        } finally {
+            setSyncingPrices(false);
         }
     };
 
@@ -246,6 +262,7 @@ export function ChannelModelManager({ channel, onChanged, health, healthLoading 
                             {item.displayName || item.modelKey}
                         </div>
                         <div className="admin-monospace truncate text-xs text-foreground/45">{item.modelKey}</div>
+                        <div className="truncate text-xs text-foreground/55">调用优先级 {modelPriorityOf(item.capabilityConfig)}</div>
                         {item.channelLabel ? <div className="truncate text-xs text-foreground/60">渠道展示名：{item.channelLabel}</div> : null}
                         {item.providerModelKey && item.providerModelKey !== item.modelKey ? <div className="admin-monospace truncate text-xs text-foreground/35">上游：{item.providerModelKey}</div> : null}
                     </div>
@@ -266,6 +283,20 @@ export function ChannelModelManager({ channel, onChanged, health, healthLoading 
                     </div>
                 ) : (
                     <AdminStatusBadge label="待配置" tone="warning" />
+                ),
+        },
+        {
+            title: "上游价",
+            width: 150,
+            render: (_, item) =>
+                item.upstreamPriceNote ? (
+                    <span className="admin-monospace text-xs text-foreground/70" title={item.upstreamPriceNote}>
+                        {item.upstreamPriceNote}
+                    </span>
+                ) : (
+                    <span className="text-xs text-foreground/35" title="点上方「同步上游价」后可读取；仅后台可见">
+                        —
+                    </span>
                 ),
         },
         { title: "规格成本价 / 销售价 / 加价", width: 310, render: (_, item) => <ChannelModelCostSummary item={item} /> },
@@ -338,6 +369,9 @@ export function ChannelModelManager({ channel, onChanged, health, healthLoading 
                     />
                     <Button loading={fetching} icon={<RefreshCw className="size-4" />} onClick={() => void fetchModels()}>
                         拉取模型
+                    </Button>
+                    <Button loading={syncingPrices} icon={<CircleDollarSign className="size-4" />} onClick={() => void syncUpstreamPrices()}>
+                        同步上游价
                     </Button>
                     <Button type="primary" icon={<Plus className="size-4" />} onClick={startCreate}>
                         新增模型

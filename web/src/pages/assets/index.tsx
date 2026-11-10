@@ -30,7 +30,8 @@ import { arkLibraryProgressMap } from "@/lib/ark-assets";
 import { ARK_ASSET_CATEGORY, ASSET_ASSIGNABLE_CATEGORY_OPTIONS, ASSET_CATEGORY_LABELS, ASSET_CATEGORY_OPTIONS, defaultAssetCategoryForKind, normalizeAssetCategory } from "@/lib/asset-category";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { flushAssetStorePersistence, useAssetStore, type AssetCategory, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
-import { loadAssetLibraryPage, loadAssetsForUse, saveRemoteUserDataNow, localSavedRemotePendingMessage, deleteAssetsWithRemoteSync, deleteAssetWithRemoteSync } from "@/services/user-data-sync";
+import { loadAssetLibraryPage, loadAssetsForUse, saveRemoteUserDataNow, localSavedRemotePendingMessage, deleteAssetsWithRemoteSync, deleteAssetWithRemoteSync, patchCachedAssetLists } from "@/services/user-data-sync";
+import { withAssetExported } from "@/lib/asset-export-count";
 import { useUserStore } from "@/stores/use-user-store";
 import { createAssetFolder, deleteAssetFolder, listAssetFolders, listRemoteAssetsPage, updateAssetFolder, type AssetFolder, moveRemoteAssetsToFolder } from "@/services/api/user-data";
 import { assetCountMap, assetSearchText, readAssetGridDensity, assetKindIcons, assetCategoryIcons } from "./asset-library-format";
@@ -100,6 +101,8 @@ export default function AssetsPage() {
     const arkEnabled = Boolean(arkQuery.data?.enabled);
     const arkProgress = useMemo(() => arkLibraryProgressMap(arkQuery.data), [arkQuery.data]);
     useArkLibraryReconcile(arkQuery.data);
+    // 只在当前页面会话里标记「刚导出过」，刷新或离开页面即清空，避免误当成持久状态。
+    const [justExportedIds, setJustExportedIds] = useState<string[]>([]);
     const [viewMode, setViewMode] = useState<"library" | "trash">("library");
     const [keyword, setKeyword] = useState("");
     const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
@@ -486,7 +489,7 @@ export default function AssetsPage() {
             }
             await loadAssetsForUse(ids);
             const byId = new Map(useAssetStore.getState().assets.map((asset) => [asset.id, asset]));
-            await exportAssets(ids.map((id) => byId.get(id)!));
+            await runAssetExport(ids.map((id) => byId.get(id)!));
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("library.assets.exportFailed"));
         } finally {
@@ -584,6 +587,48 @@ export default function AssetsPage() {
         }
     };
 
+    const markAssetsExported = async (assetIds: string[]) => {
+        // 导出计数只是附加信息：写失败或不落地都不能把已完成的导出报成失败。
+        try {
+            const ids = new Set(assetIds);
+            if (!ids.size) return;
+            await ensureAssetsInStore([...ids]);
+            let marked = false;
+            // 只改 metadata，不推 updatedAt：导出数不算内容修改，卡片上的时间和排序不应变。
+            // 一次批量写入，避免整库导出时逐条 setState 触发多次持久化和同步。
+            const nextAssets = useAssetStore.getState().assets.map((asset) => {
+                if (!ids.has(asset.id)) return asset;
+                marked = true;
+                return withAssetExported(asset);
+            });
+            if (!marked) return;
+            useAssetStore.setState({ assets: nextAssets });
+            // 角标直接补丁到已加载的列表缓存里：导出后不重新请求、不重排。
+            patchCachedAssetLists(nextAssets.filter((asset) => ids.has(asset.id)));
+            setJustExportedIds((previous) => [...new Set([...previous, ...ids])]);
+            void flushAssetStorePersistence().catch((error) => console.warn("导出计数持久化失败", error));
+        } catch (error) {
+            console.warn("导出计数写入失败", error);
+        }
+    };
+
+    const runAssetExport = async (assets: LibraryAsset[]) => {
+        const result = await exportAssets(assets);
+        await markAssetsExported(result.exportedIds);
+        if (result.exportedIds.length) {
+            // 导出完就退出批量选择，改用卡片绿框提示「刚导出过」，避免同一批被重复导出。
+            setSelectedIds([]);
+            setSelecting(false);
+            selectionAnchor.current = undefined;
+        }
+        const summary = (items: { title: string }[]) => `${items.slice(0, 4).map((item) => item.title).join("、")}${items.length > 4 ? " 等" : ""}`;
+        const notes: string[] = [];
+        if (result.blockedOss.length) notes.push(`${result.blockedOss.length} 个 OSS 上的图片不能导出：${summary(result.blockedOss)}`);
+        if (result.failed.length) notes.push(`${result.failed.length} 个文件读取失败未包含：${summary(result.failed)}`);
+        if (!notes.length) return;
+        message.warning(`${result.saved ? "已导出其余素材" : "本次没有生成导出包"}；${notes.join("；")}`);
+    };
+
     const exportSelectedAssets = async () => {
         if (!selectedIds.length || batchWorking) return;
         const ids = [...selectedIds];
@@ -591,7 +636,7 @@ export default function AssetsPage() {
         try {
             await loadAssetsForUse(ids);
             const byId = new Map(useAssetStore.getState().assets.map((asset) => [asset.id, asset]));
-            await exportAssets(ids.map((id) => byId.get(id)!));
+            await runAssetExport(ids.map((id) => byId.get(id)!));
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("library.assets.exportFailed"));
         } finally {
@@ -862,6 +907,7 @@ export default function AssetsPage() {
                                                     folderOptions={folderSelectOptions}
                                                     onMoveToFolder={(folderId) => void moveAssetsToFolder([asset.id], folderId)}
                                                     arkProgress={arkEnabled ? arkProgress.get(asset.id) : undefined}
+                                                    justExported={justExportedIds.includes(asset.id)}
                                                 />
                                             ))}
                                         </CollectionGrid>

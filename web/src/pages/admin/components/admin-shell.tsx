@@ -21,6 +21,7 @@ import {
     Infinity as InfinityIcon,
     KeyRound,
     Layers3,
+    ListChecks,
     LogIn,
     MailSearch,
     Mail,
@@ -87,6 +88,7 @@ const adminNavigation: AdminNavigationGroup[] = [
         items: [
             { path: "/admin", keywords: "统计 仪表盘 收入 使用量 dashboard analytics", label: "运行总览", shortLabel: "总览", icon: <BarChart3 className="size-4" /> },
             { path: "/admin/logs", keywords: "请求 日志 错误 调用 计费 退款", label: "请求明细", shortLabel: "请求", icon: <FileClock className="size-4" /> },
+            { path: "/admin/tasks", keywords: "任务 看板 汇总 用户 排队 运行 失败", label: "任务看板", shortLabel: "任务", icon: <ListChecks className="size-4" /> },
             { path: "/admin/login-logs", keywords: "登录 记录 IP 安全", label: "登录日志", shortLabel: "登录", icon: <LogIn className="size-4" /> },
             { path: "/admin/email-logs", keywords: "邮件 发送 记录 验证码", label: "邮件记录", shortLabel: "邮件", icon: <MailSearch className="size-4" /> },
             { path: "/admin/settings/system-performance", keywords: "性能 监控 CPU 内存 缓存 队列", label: "系统性能", shortLabel: "性能", icon: <Activity className="size-4" /> },
@@ -113,6 +115,7 @@ const adminNavigation: AdminNavigationGroup[] = [
         label: "模型与渠道",
         items: [
             { path: "/admin/channels", keywords: "渠道 模型 API Key 密钥 上游 定价 协议", label: "渠道与模型", shortLabel: "渠道", icon: <RadioTower className="size-4" /> },
+            { path: "/admin/batch-video", keywords: "批量 视频 量产 验收 重试", label: "批量视频设置", shortLabel: "批量", icon: <Layers3 className="size-4" /> },
             { path: "/admin/models", keywords: "前台模型 逻辑模型 能力", label: "前台模型", shortLabel: "模型", icon: <Layers3 className="size-4" />, requireFeature: "frontendModelsEnabled" },
         ],
     },

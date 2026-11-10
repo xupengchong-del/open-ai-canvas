@@ -9,6 +9,9 @@ import { AssetLibraryCard, AssetLibraryCardMedia } from "@/components/assets/ass
 import { type AssetKind } from "@/stores/use-asset-store";
 import { AssetMediaPreview } from "@/components/asset-media-preview";
 import { AudioPreviewBar, CharacterAssetCover } from "@/components/assets/asset-rich-cover";
+import { assetExportCount } from "@/lib/asset-export-count";
+import { resourceStorageLabel, resourceStorageLocation, resourceStorageTitle } from "@/lib/canvas/resource-storage-status";
+import { cn } from "@/lib/utils";
 import { useAudioSampleRate } from "@/hooks/use-audio-sample-rate";
 import { translate } from "@/i18n";
 import { arkCertificationBadgeKey, arkCertificationExpired, type ArkLibraryProgress } from "@/lib/ark-assets";
@@ -53,6 +56,7 @@ export function AssetCard({
     folderOptions,
     onMoveToFolder,
     arkProgress,
+    justExported = false,
 }: {
     asset: LibraryAsset;
     selected: boolean;
@@ -71,6 +75,8 @@ export function AssetCard({
     onMoveToFolder: (folderId: string) => void;
     /** 这张图片最近一次方舟认证提交；已认证的展示以素材自身的 arkCertification 为准。 */
     arkProgress?: ArkLibraryProgress;
+    /** 本次页面会话内刚导出过：取消选中后仍用绿框提示，避免重复导出。 */
+    justExported?: boolean;
 }) {
     const summary = assetSummary(asset);
     const menuItems: MenuProps["items"] = isTrash
@@ -92,8 +98,8 @@ export function AssetCard({
         onOpen();
     };
     return (
-        <AssetLibraryCard selected={selected}>
-            <AssetCover asset={asset} selected={selected} isTrash={isTrash} onSelect={onSelect} onOpen={handleCardClick} menuItems={menuItems} arkProgress={arkProgress} />
+        <AssetLibraryCard selected={selected} className={justExported ? "is-just-exported" : undefined}>
+            <AssetCover asset={asset} selected={selected} isTrash={isTrash} justExported={justExported} onSelect={onSelect} onOpen={handleCardClick} menuItems={menuItems} arkProgress={arkProgress} />
             <button type="button" className="asset-collection-body block w-full px-2 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--workspace-accent)]" onClick={handleCardClick}>
                 <div className="flex min-w-0 items-center justify-between gap-2">
                     <h2 className="truncate text-[var(--fs-body)] font-semibold text-foreground" title={asset.title}>
@@ -129,6 +135,7 @@ export function isKnownAssetKind(kind: unknown): kind is AssetKind {
 
 export function AssetCover({
     asset,
+    justExported = false,
     selected,
     isTrash = false,
     onSelect,
@@ -143,6 +150,8 @@ export function AssetCover({
     onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
     menuItems: MenuProps["items"];
     arkProgress?: ArkLibraryProgress;
+    /** 本次会话内刚导出过，用于卡片绿框提示。 */
+    justExported?: boolean;
 }) {
     const kind = isKnownAssetKind(asset.kind) ? asset.kind : undefined;
     const KindIcon = kind ? assetKindIcons[kind] : FileText;
@@ -151,6 +160,10 @@ export function AssetCover({
     const clock = asset.kind === "video" || (asset.kind === "audio" && !audioPreview) ? formatAssetClock(asset.data.durationMs) : null;
     const showPlay = asset.kind === "video";
     const isLight = asset.kind === "audio" || asset.kind === "text" || asset.kind === "model";
+    // 存储位置与导出次数直接写在卡片上：素材库需要一眼看出素材落在服务器还是对象存储。
+    const storageKey = "data" in asset && asset.data && "storageKey" in asset.data ? (asset.data.storageKey as string | undefined) : undefined;
+    const storageLoc = resourceStorageLocation(storageKey);
+    const exportCount = assetExportCount(asset);
     // 图片和视频的画面就是预览本身，类型与分类角标只会遮挡画面；规格写在卡片摘要里。
     const visualMedia = asset.kind === "image" || asset.kind === "video";
     return (
@@ -199,9 +212,26 @@ export function AssetCover({
                 ) : asset.kind === "entity" || visualMedia ? null : (
                     <span className="assets-cover-badge is-category">{assetCategoryLabel(asset.category)}</span>
                 )}
+                {storageKey ? (
+                    <span
+                        className={cn(
+                            "assets-cover-badge !font-medium",
+                            storageLoc === "oss" ? "!bg-sky-500/85 !text-white" : storageLoc === "server" ? "!bg-emerald-600/85 !text-white" : "!bg-amber-600/85 !text-white",
+                        )}
+                        title={resourceStorageTitle(storageKey)}
+                    >
+                        {resourceStorageLabel(storageKey)}
+                    </span>
+                ) : null}
                 {isTrash ? null : <ArkCoverBadge asset={asset} progress={arkProgress} />}
             </span>
             {clock ? <span className="assets-cover-clock">{clock}</span> : null}
+            {exportCount > 0 ? (
+                <span className="assets-cover-export" title={`已导出 ${exportCount} 次`}>
+                    <Download />
+                    已导出 {exportCount}
+                </span>
+            ) : null}
             {audioPreview ? <AudioPreviewBar asset={asset} /> : null}
             <input
                 type="checkbox"
