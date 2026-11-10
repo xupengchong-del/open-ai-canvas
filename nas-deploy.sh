@@ -318,7 +318,7 @@ echo '--- 部署前备份数据库 ---'
 BACKUP="\$DATA/backups/pre-upgrade-\$(date +%Y%m%d-%H%M%S).sql.gz"
 d mkdir -p "\$DATA/backups"
 if compose exec -T postgres pg_dump -U open_ai_canvas -d open_ai_canvas 2>/dev/null | gzip > "\$BACKUP" 2>/dev/null && [ -s "\$BACKUP" ]; then
-  echo "    已备份：\$BACKUP（\$(du -h "\$BACKUP" | cut -f1)）"
+  echo "    已备份：\${BACKUP}（\$(du -h "\$BACKUP" | cut -f1)）"
 else
   echo '    备份失败：可选继续，但升级跨越 32 个官方迁移，建议先排查'
 fi
@@ -341,7 +341,7 @@ if [ '$FORCE_BUILD' = '1' ] || ! d docker image inspect open-ai-canvas-web:serve
   echo '    清理可回收镜像层（不影响正在使用的镜像）'
   d docker image prune -f >/dev/null 2>&1 || true
   for target in backend yingce-agent web; do
-    echo "    --- 构建 \$target（串行，限制并发）---"
+    echo "    --- 构建 \${target}（串行，限制并发）---"
     compose build "\$target" || { echo "构建 \$target 失败"; exit 1; }
     # 每构建完一个就回收中间层与构建缓存，避免磁盘与 page cache 持续累积
     d docker builder prune -f --filter until=10m >/dev/null 2>&1 || true
@@ -369,7 +369,7 @@ SCRIPT
     code="$(curl -sk -o /dev/null -m 8 -w '%{http_code}' "https://$NAS_HOST:$PUBLIC_PORT/api/health" || true)"
     if [ "$code" = "502" ] || [ "$code" = "504" ]; then
       # 前端容器换过 IP 时 tls 里的 nginx 会一直打到旧地址，reload 一次即可恢复。
-      warn "tls 反代返回 $code，重载 nginx 后再检查"
+      warn "tls 反代返回 ${code}，重载 nginx 后再检查"
       remote <<'RELOAD' >/dev/null 2>&1 || true
 $(prelude)
 compose exec -T tls nginx -s reload 2>/dev/null || compose restart tls >/dev/null 2>&1 || true
@@ -472,7 +472,7 @@ cmd_pull_models() {
       --dry-run) dry_run=1 ;;
       --scope=*) scope="${arg#*=}" ;;
       --channel=*) channel="${arg#*=}" ;;
-      *) die "未知参数：$arg（支持 --dry-run / --scope=system / --channel=CHANNEL_000001）" ;;
+      *) die "未知参数：${arg}（支持 --dry-run / --scope=system / --channel=CHANNEL_000001）" ;;
     esac
   done
   db="$REPO_ROOT/.local/project-workbench-debug/open_ai_canvas.db"
