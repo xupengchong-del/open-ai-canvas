@@ -47,7 +47,7 @@ func TestMigrateSchemaRenumberLocalExtensionMigrations(t *testing.T) {
 	}
 	for offset, name := range localExtensionMigrationNames {
 		var row schemaMigration
-		if err := db.First(&row, "version = ?", 93+int64(offset)).Error; err != nil {
+		if err := db.First(&row, "version = ?", 102+int64(offset)).Error; err != nil {
 			t.Fatalf("新编号 %d 缺失：%v", 93+offset, err)
 		}
 		if row.Name != name || row.Checksum != "sha256:old-"+name {
@@ -60,7 +60,7 @@ func TestMigrateSchemaRenumberLocalExtensionMigrations(t *testing.T) {
 		t.Fatalf("重复归一化失败：%v", err)
 	}
 	var newCount int64
-	db.Model(&schemaMigration{}).Where("version BETWEEN 93 AND 100").Count(&newCount)
+	db.Model(&schemaMigration{}).Where("version BETWEEN 102 AND 109").Count(&newCount)
 	if newCount != 8 {
 		t.Fatalf("重复归一化后新编号数量 = %d，期望 8", newCount)
 	}

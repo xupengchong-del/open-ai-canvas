@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/repository"
 )
 
 func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User, channelID string) (*AdminChannelModelFetchResult, error) {
@@ -22,7 +23,7 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 		return nil, err
 	}
 	// 使用服务端保存的渠道密钥和请求头访问上游，避免敏感配置再次经过浏览器。
-	input := ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers}
+	input := ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, ProxyURL: channel.ProxyURL, Headers: headers}
 	models, err := s.FetchChannelModels(ctx, actor, input)
 	if err != nil {
 		return nil, err
@@ -52,7 +53,15 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 		}
 		missing = append(missing, model.ChannelModel{ID: modelID, ChannelID: channelID, ModelKey: name, ProviderModelKey: name, DisplayName: "未分类", BillingMode: "fixed_request", Enabled: false, PriceVersion: 1, UpstreamPriceNote: upstreamPrices[key]})
 	}
-	added, err := s.repo.CreateMissingChannelModels(missing)
+	var added int64
+	err = s.repo.Transaction(func(repo *repository.Repository) error {
+		if err := s.checkCatalogSource(repo, channel); err != nil {
+			return err
+		}
+		var err error
+		added, err = repo.CreateMissingChannelModels(missing)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -68,11 +77,21 @@ func (s *Service) PreviewAdminChannelModels(ctx context.Context, actor *model.Us
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
 	}
-	models, prices, err := s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
+	diff, prices, err := s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
 	if err != nil {
 		return nil, err
 	}
-	return &AdminChannelModelPreview{Models: models, UpstreamPrices: prices}, nil
+	return &AdminChannelModelPreview{
+		Models:         diff.Models,
+		UpstreamPrices: prices,
+		Added:          diff.Added,
+		Retained:       diff.Retained,
+		Missing:        diff.Missing,
+		FirstRead:      diff.FirstRead,
+		BaselineReset:  diff.BaselineReset,
+		ReadAt:         diff.ReadAt,
+		PreviousReadAt: diff.PreviousReadAt,
+	}, nil
 }
 
 // ImportAdminChannelModels 只导入管理员明确选择、且仍存在于上游目录中的模型。
@@ -84,7 +103,7 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 	if err != nil {
 		return nil, err
 	}
-	models, prices, err := s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
+	catalog, prices, err := s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +113,8 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 	if len(selected) > 500 {
 		return nil, BadAuthRequest("单次最多导入 500 个模型")
 	}
-	available := make(map[string]string, len(models))
-	for _, name := range models {
+	available := make(map[string]string, len(catalog.Models))
+	for _, name := range catalog.Models {
 		available[channelModelCatalogKey(name)] = name
 	}
 	chosen := make([]string, 0, len(selected))
@@ -144,7 +163,15 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 		missing = append(missing, model.ChannelModel{ID: modelID, ChannelID: channelID, ModelKey: name, ProviderModelKey: name, DisplayName: "未分类", BillingMode: "fixed_request", Enabled: false, PriceConfigured: false, PriceVersion: 1, UpstreamPriceNote: upstreamPrices[key]})
 		known[key] = struct{}{}
 	}
-	added, err := s.repo.CreateMissingChannelModels(missing)
+	var added int64
+	err = s.repo.Transaction(func(repo *repository.Repository) error {
+		if err := s.checkCatalogSource(repo, channel); err != nil {
+			return err
+		}
+		var err error
+		added, err = repo.CreateMissingChannelModels(missing)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +181,12 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 	return &AdminChannelModelFetchResult{Models: chosen, Added: added}, nil
 }
 
-func (s *Service) fetchAdminChannelModelCatalog(ctx context.Context, actor *model.User, channelID string) ([]string, map[string]string, error) {
+func (s *Service) fetchAdminChannelModelCatalog(ctx context.Context, actor *model.User, channelID string) (*ChannelCatalogDiff, map[string]string, error) {
+	// 模型列表沿用上游的目录快照能力（带差异计算），上游价格是本机扩展的附加信息。
+	result, err := s.ReadAdminChannelCatalog(ctx, actor, channelID)
+	if err != nil {
+		return nil, nil, err
+	}
 	channel, err := s.adminSystemChannel(channelID)
 	if err != nil {
 		return nil, nil, err
@@ -163,11 +195,7 @@ func (s *Service) fetchAdminChannelModelCatalog(ctx context.Context, actor *mode
 	if err != nil {
 		return nil, nil, err
 	}
-	input := ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, Headers: headers}
-	models, err := s.FetchChannelModels(ctx, actor, input)
-	if err != nil {
-		return nil, nil, err
-	}
+	input := ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, ProxyURL: channel.ProxyURL, Headers: headers}
 	// 价格是附加项：上游没有 /api/pricing 或读取失败都只是这次没有价格。
-	return uniqueNonEmpty(models), s.fetchUpstreamPriceNotes(ctx, input), nil
+	return result, s.fetchUpstreamPriceNotes(ctx, input), nil
 }

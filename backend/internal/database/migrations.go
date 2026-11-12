@@ -15,8 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 100
-
+const CurrentSchemaVersion int64 = 109
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -339,24 +338,50 @@ var schemaMigrations = []migration{
 		}
 		return nil
 	}},
-
-	// ---- 本地扩展迁移（原 v61-v68 后移，避开上游 v61-v92）----
-	// checksum 保持本机原值，NAS 库只需改版本号，不需要改校验和。
-	{version: 93, name: channelModelUpstreamPriceNoteMigrationName, checksum: channelModelUpstreamPriceNoteChecksum, apply: migrateChannelModelUpstreamPriceNote},
-	{version: 94, name: "batch_video_production", checksum: batchVideoProductionChecksum, apply: migrateBatchVideoProduction},
-	{version: 95, name: "batch_video_reference_generation", checksum: batchVideoReferenceGenerationChecksum, apply: func(tx *gorm.DB) error {
+	{version: 93, name: "ecommerce_round_history", checksum: "sha256:ecommerce-round-history-v93-20261109", apply: func(tx *gorm.DB) error {
+		// Additive only: a new table plus a nullable pointer column. Existing
+		// projects stay readable and are converted lazily on their next save.
+		if err := tx.AutoMigrate(&model.EcommerceProject{}, &model.EcommerceRound{}); err != nil {
+			return err
+		}
+		return nil
+	}},
+	{version: 94, name: "drama_cast_styles_import", checksum: "sha256:drama-cast-styles-import-v94", apply: migrateDramaCastStylesImport},
+	{version: 95, name: "ark_private_asset_binding_identity", checksum: "sha256:ark-private-asset-binding-identity-v95", apply: migrateArkPrivateAssetBindingIdentity},
+	{version: 96, name: "canvas_unified_text_nodes", checksum: canvasNodeModelChecksum, apply: migrateCanvasNodeModel},
+	{version: 97, name: "channel_websites", checksum: "sha256:channel-websites-v97-20261110", apply: migrateChannelWebsites},
+	{version: 98, name: "api_log_generation_content", checksum: "sha256:api-log-generation-content-v98", apply: migrateAPILogGenerationContent},
+	{version: 99, name: "site_traffic_events", checksum: "sha256:site-traffic-events-v99-20261111", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.SiteTrafficEvent{})
+	}},
+	{version: 100, name: "agent_mcp_connections", checksum: "sha256:agent-mcp-connections-v100", apply: migrateAgentMCP},
+	{version: 101, name: "creation_conversation_history", checksum: "sha256:creation-conversation-history-v101", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.CreationConversation{}, &model.CreationConversationMessage{}, &model.CreationConversationResource{})
+	}},
+	// ---- 本地扩展迁移（v102-v109）----
+	// 合并上游 v1.8.5 后，官方占用 v93-v101，本机 8 个迁移再次后移到 v102-v109。
+	// checksum 保持本机原值：normalizeLocalExtensionMigrations 只搬版本号，不碰校验和。
+	{version: 102, name: channelModelUpstreamPriceNoteMigrationName, checksum: channelModelUpstreamPriceNoteChecksum, apply: migrateChannelModelUpstreamPriceNote},
+	{version: 103, name: "batch_video_production", checksum: batchVideoProductionChecksum, apply: migrateBatchVideoProduction},
+	{version: 104, name: "batch_video_reference_generation", checksum: batchVideoReferenceGenerationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoReferenceAsset{})
 	}},
-	{version: 96, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v64", apply: func(tx *gorm.DB) error {
+	{version: 105, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v64", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{}, &model.BatchVideoAttempt{})
 	}},
-	{version: 97, name: "batch_video_start_schedule_priority", checksum: "sha256:batch-video-start-schedule-priority-v65", apply: func(tx *gorm.DB) error {
+	{version: 106, name: "batch_video_start_schedule_priority", checksum: "sha256:batch-video-start-schedule-priority-v65", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{})
 	}},
-	{version: 98, name: "batch_video_per_image_analysis", checksum: "sha256:batch-video-per-image-analysis-v66", apply: migrateBatchVideoPerImageAnalysis},
-	{version: 99, name: "generated_asset_titles", checksum: generatedAssetTitlesChecksum, apply: migrateGeneratedAssetTitles},
-	{version: 100, name: "generated_asset_order", checksum: generatedAssetOrderChecksum, apply: migrateGeneratedAssetOrder},
+	{version: 107, name: "batch_video_per_image_analysis", checksum: "sha256:batch-video-per-image-analysis-v66", apply: migrateBatchVideoPerImageAnalysis},
+	{version: 108, name: "generated_asset_titles", checksum: generatedAssetTitlesChecksum, apply: migrateGeneratedAssetTitles},
+	{version: 109, name: "generated_asset_order", checksum: generatedAssetOrderChecksum, apply: migrateGeneratedAssetOrder},
+}
 
+func migrateAPILogGenerationContent(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.ApiCallLog{}) || tx.Migrator().HasColumn(&model.ApiCallLog{}, "GenerationContentJSON") {
+		return nil
+	}
+	return tx.Migrator().AddColumn(&model.ApiCallLog{}, "GenerationContentJSON")
 }
 
 // migrateReferenceVideoCostPrice 为价格档成本和账单成本快照增加带参考视频的成本价。
@@ -829,6 +854,10 @@ func migrateChannelModelProtocolLength(tx *gorm.DB) error {
 }
 
 func migrateChannelModelUpstreamPriceNote(tx *gorm.DB) error {
+	// 表还没建出来说明是全新库，AutoMigrate(Models()) 建表时会自带该列，这里无事可做。
+	if !tx.Migrator().HasTable(&model.ChannelModel{}) {
+		return nil
+	}
 	if !tx.Migrator().HasColumn(&model.ChannelModel{}, "UpstreamPriceNote") {
 		return tx.Migrator().AddColumn(&model.ChannelModel{}, "UpstreamPriceNote")
 	}
@@ -1242,7 +1271,7 @@ func normalizeLegacyUpstreamPriceNoteMigration(tx *gorm.DB) error {
 	result := tx.Model(&schemaMigration{}).
 		Where("version = ? AND name = ? AND checksum = ?", legacy.Version, legacy.Name, legacy.Checksum).
 		Updates(map[string]any{
-			"version":  93,
+			"version":  102,
 			"name":     channelModelUpstreamPriceNoteMigrationName,
 			"checksum": channelModelUpstreamPriceNoteChecksum,
 		})
@@ -1288,41 +1317,69 @@ var localExtensionMigrationNames = []string{
 // 只改版本号、不动 name/checksum，因此新版 validateMigrationRecord 校验仍会通过；
 // 腾出的 v61-v92 由官方迁移正常执行。函数幂等：只在旧布局存在且新编号未占用时执行。
 func normalizeLocalExtensionMigrations(tx *gorm.DB) error {
-	var legacy schemaMigration
-	err := tx.First(&legacy, "version = ?", 61).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
+	// 本机扩展迁移在历史部署里出现过两个编号区间：
+	//   v61-v68  —— v1.6.x 时代的原始编号
+	//   v93-v100 —— 合并 v1.8.3 时的临时编号
+	// v1.8.5 起官方占用 v93-v101，所以两个区间都必须搬到现在的位置。
+	const localFirst = int64(102)
+	targets := make([]int64, len(localExtensionMigrationNames))
+	for i := range targets {
+		targets[i] = localFirst + int64(i)
 	}
-	if err != nil {
-		return fmt.Errorf("读取本机扩展迁移记录：%w", err)
-	}
-	if legacy.Name != localExtensionMigrationNames[0] {
-		return nil
-	}
-	var occupied int64
-	if err := tx.Model(&schemaMigration{}).Where("version >= ? AND version <= ?", 93, 100).Count(&occupied).Error; err != nil {
-		return fmt.Errorf("检查本机扩展迁移新编号：%w", err)
-	}
-	if occupied > 0 {
-		return nil
-	}
-	// 逐条校验旧记录确实都是本机迁移，避免误改同名的官方记录。
-	for offset, name := range localExtensionMigrationNames {
+
+	inPlace := true
+	for i, name := range localExtensionMigrationNames {
 		var record schemaMigration
-		if err := tx.First(&record, "version = ?", 61+int64(offset)).Error; err != nil {
-			return fmt.Errorf("读取本机扩展迁移 %d：%w", 61+offset, err)
+		err := tx.First(&record, "version = ?", targets[i]).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			inPlace = false
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("读取本机扩展迁移 %d：%w", targets[i], err)
 		}
 		if record.Name != name {
-			return nil
+			inPlace = false
+			break
 		}
 	}
-	// 目标区间 93-100 完全在原区间 61-68 之外，单条 UPDATE 不会撞主键。
-	result := tx.Exec("UPDATE schema_migrations SET version = version + 32 WHERE version BETWEEN 61 AND 68")
-	if result.Error != nil {
-		return fmt.Errorf("后移本机扩展迁移编号：%w", result.Error)
+	if inPlace {
+		return nil
 	}
-	if result.RowsAffected != 8 {
-		return fmt.Errorf("后移本机扩展迁移影响 %d 行，期望 8 行，拒绝继续启动", result.RowsAffected)
+
+	// 按名称定位旧记录，不假设它一定在某个固定区间。
+	type placed struct {
+		version int64
+		name    string
+	}
+	var found []placed
+	for _, name := range localExtensionMigrationNames {
+		var record schemaMigration
+		err := tx.First(&record, "name = ?", name).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("读取本机扩展迁移 %s：%w", name, err)
+		}
+		found = append(found, placed{version: record.Version, name: record.Name})
+	}
+	if len(found) != len(localExtensionMigrationNames) {
+		return nil
+	}
+
+	// 目标区间可能被官方记录占用（例如已升级过一部分），先整体挪到负数暂存区，再落到目标位。
+	if err := tx.Exec("UPDATE schema_migrations SET version = -(version + 1000) WHERE name IN (?)", localExtensionMigrationNames).Error; err != nil {
+		return fmt.Errorf("暂存本机扩展迁移编号：%w", err)
+	}
+	for i, name := range localExtensionMigrationNames {
+		result := tx.Exec("UPDATE schema_migrations SET version = ? WHERE name = ? AND version < 0", targets[i], name)
+		if result.Error != nil {
+			return fmt.Errorf("后移本机扩展迁移 %s：%w", name, result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("后移本机扩展迁移 %s 影响 %d 行，拒绝继续启动", name, result.RowsAffected)
+		}
 	}
 	return nil
 }
@@ -1546,6 +1603,10 @@ func migrateDramaSegmentRevision(tx *gorm.DB) error {
 // ---- 本地扩展迁移函数（batch_video / generated_asset）----
 
 func migrateBatchVideoPerImageAnalysis(tx *gorm.DB) error {
+	// 全新库里这张表还没建，建表时会直接用最新结构，不需要回填。
+	if !tx.Migrator().HasTable(&model.BatchVideoReferenceAsset{}) {
+		return nil
+	}
 	if err := tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoReferenceAsset{}); err != nil {
 		return err
 	}
@@ -1556,6 +1617,10 @@ func migrateBatchVideoPerImageAnalysis(tx *gorm.DB) error {
 }
 
 func migrateGeneratedAssetTitles(tx *gorm.DB) error {
+	// 表还没建出来说明是全新库，建表时会直接带上目标列/默认值，这里无事可做。
+	if !tx.Migrator().HasTable(&model.Asset{}) {
+		return nil
+	}
 	type assetRow struct {
 		ID          string
 		UserID      string
@@ -1611,6 +1676,10 @@ func migrateGeneratedAssetTitles(tx *gorm.DB) error {
 }
 
 func migrateGeneratedAssetOrder(tx *gorm.DB) error {
+	// 表还没建出来说明是全新库，建表时会直接带上目标列/默认值，这里无事可做。
+	if !tx.Migrator().HasTable(&model.Asset{}) {
+		return nil
+	}
 	type assetRow struct {
 		ID          string
 		Title       string

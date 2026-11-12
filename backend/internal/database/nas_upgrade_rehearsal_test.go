@@ -61,7 +61,7 @@ func TestRehearseUpgradeFromNASSchemaMigrations(t *testing.T) {
 		t.Fatalf("归一化后 v61-v92 仍有 %d 条记录", oldCount)
 	}
 	var newCount int64
-	db.Model(&schemaMigration{}).Where("version BETWEEN 93 AND 100").Count(&newCount)
+	db.Model(&schemaMigration{}).Where("version BETWEEN 102 AND 109").Count(&newCount)
 	if newCount != 8 {
 		t.Fatalf("归一化后 v93-v100 有 %d 条记录，期望 8", newCount)
 	}
@@ -80,7 +80,7 @@ func TestRehearseUpgradeFromNASSchemaMigrations(t *testing.T) {
 	// v93-v100 的 name/checksum 必须与代码定义一致（否则这里会报校验错误）
 	for offset, name := range localExtensionMigrationNames {
 		var row schemaMigration
-		if err := db.First(&row, "version = ?", 93+int64(offset)).Error; err != nil {
+		if err := db.First(&row, "version = ?", 102+int64(offset)).Error; err != nil {
 			t.Fatal(err)
 		}
 		if row.Name != name {

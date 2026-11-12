@@ -969,7 +969,7 @@ func TestMigrateSchemaNormalizesLegacyUpstreamPriceNoteMigrationV55(t *testing.T
 		t.Fatalf("migration 55 = %#v, want official provider catalog migration", upstream)
 	}
 	var normalized schemaMigration
-	if err := db.First(&normalized, "version = ?", 93).Error; err != nil {
+	if err := db.First(&normalized, "version = ?", 102).Error; err != nil {
 		t.Fatal(err)
 	}
 	if normalized.Name != channelModelUpstreamPriceNoteMigrationName || normalized.Checksum != channelModelUpstreamPriceNoteChecksum {

@@ -12,6 +12,7 @@ COPY README.md /app/README.md
 COPY assets /app/assets
 COPY web ./
 COPY backend/internal/ecommerceagent/platform_knowledge.json /app/backend/internal/ecommerceagent/platform_knowledge.json
+COPY backend/internal/app/appearance_theme_packs.json /app/backend/internal/app/appearance_theme_packs.json
 ARG VITE_TLDRAW_LICENSE_KEY
 # 可选：依赖镜像源（例如国内构建用 https://registry.npmmirror.com）。留空则用默认源。
 ARG NPM_REGISTRY

@@ -334,13 +334,15 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if input == nil || input.Image == nil {
 			return nil, BadAuthRequest("请配置图片模型能力参数")
 		}
+		if input.Image.Parameters == nil {
+			normalizeLegacyImageResolutionConfig(protocol, input.Image)
+		}
 		if len(registries) > 0 && registries[0] != nil {
-			if adapter, ok := registries[0].Resolve(protocol); ok && adapter.Metadata().ImageParameters != nil {
-				if err := resolveImageCapabilityParameters(input.Image, adapter.Metadata().ImageParameters, modelName); err != nil {
+			if adapter, ok := registries[0].Resolve(protocol); ok {
+				metadata := adapter.Metadata()
+				if err := resolveImageCapabilityParameters(input.Image, metadata.ImageParameters, modelName, metadata.Create); err != nil {
 					return nil, err
 				}
-			} else if input.Image.Parameters != nil {
-				return nil, BadAuthRequest("当前插件未声明图片参数合同，请先更新插件")
 			}
 		}
 		if input.Image.Parameters != nil {
@@ -364,15 +366,21 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 	if input == nil || input.Video == nil {
 		return nil, BadAuthRequest("请配置视频模型能力参数")
 	}
-	video := applyModelSpecificVideoCapability(input.Video, protocol, modelName)
-	if video.BatchGeneration.MaxItems <= 0 {
-		video.BatchGeneration.MaxItems = 20
+	// 已保存和提交的能力由管理员决定；型号建议只用于构造默认配置。
+	// 批量授权字段（单个上限与调用优先级）属于应用层规范化，仍需在此兜底。
+	video := input.Video
+	if video.BatchGeneration.MaxItems <= 0 || video.BatchGeneration.MaxItems > 1000 || video.BatchGeneration.Priority != priority {
+		cloned := *video
+		if cloned.BatchGeneration.MaxItems <= 0 {
+			cloned.BatchGeneration.MaxItems = 20
+		}
+		if cloned.BatchGeneration.MaxItems > 1000 {
+			cloned.BatchGeneration.MaxItems = 1000
+		}
+		// 批量优先级是通用优先级的历史字段；保存时保持同步，旧读者仍能读到同一个值。
+		cloned.BatchGeneration.Priority = priority
+		video = &cloned
 	}
-	if video.BatchGeneration.MaxItems > 1000 {
-		video.BatchGeneration.MaxItems = 1000
-	}
-	// 批量优先级是通用优先级的历史字段；保存时保持同步，旧读者仍能读到同一个值。
-	video.BatchGeneration.Priority = priority
 	if strings.TrimSpace(protocol) == "autodl-comfyui" {
 		var err error
 		video, err = normalizeAutoDLVideoScreenSpec(video, modelName)
