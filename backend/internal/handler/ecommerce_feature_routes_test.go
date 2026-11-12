@@ -42,6 +42,11 @@ func TestEcommerceFeatureRoutesKeepHistoryAndAdminConfiguration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// 本用例验证「电商开关关闭」时写接口被拦住。默认值已改为开放电商，
+	// 所以必须显式写入关闭配置，不能依赖 DefaultFeatureAvailability。
+	if err := db.Create(&model.SystemSetting{Key: "feature_availability", ValueJSON: `{"ecommerceEnabled":false}`}).Error; err != nil {
+		t.Fatal(err)
+	}
 	svc := service.New(repository.New(db), t.TempDir())
 	t.Cleanup(func() { _ = svc.Close() })
 	// 写接口先经过限流协调器；本用例自行配置，不依赖同进程其它用例遗留的全局状态。

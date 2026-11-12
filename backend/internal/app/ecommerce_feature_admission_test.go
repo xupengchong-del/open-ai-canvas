@@ -24,6 +24,15 @@ func ecommerceCreationTestService(t *testing.T) (*Service, *gorm.DB, string, Cre
 	return s, db, id, guard
 }
 
+// closedEcommerceFeatures 显式构造「电商关闭」场景。
+// 默认值已改为开放电商（见 platform.DefaultFeatureAvailability），测试不能再隐式依赖它。
+func closedEcommerceFeatures() FeatureAvailability {
+	features := defaultFeatureAvailability()
+	features.EcommerceEnabled, features.EcommerceVideoEnabled = false, false
+	features.ImageWorkbenchEnabled, features.VideoWorkbenchEnabled = false, false
+	return features
+}
+
 func saveAdmissionFeatures(t *testing.T, s *Service, value FeatureAvailability) {
 	t.Helper()
 	encoded, err := json.Marshal(value)
@@ -116,7 +125,7 @@ func TestEcommerceDisabledWritesKeepHistoryAndManualRetryGate(t *testing.T) {
 	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
-	saveAdmissionFeatures(t, s, defaultFeatureAvailability())
+	saveAdmissionFeatures(t, s, closedEcommerceFeatures())
 	checks := []func() error{
 		func() error { _, err := s.CreateEcommerceProject("user"); return err },
 		func() error {
@@ -176,7 +185,7 @@ func TestEcommerceAcceptedResultPersistenceAndCancellationStayOpen(t *testing.T)
 	if err := db.Create(task).Error; err != nil {
 		t.Fatal(err)
 	}
-	saveAdmissionFeatures(t, s, defaultFeatureAvailability())
+	saveAdmissionFeatures(t, s, closedEcommerceFeatures())
 	platform, _ := ecommerceagent.PlatformFor("淘宝")
 	brief := ecommerceagent.Brief{Category: "耳机"}
 	analysis := ecommerceagent.Analysis{Brief: brief, Recommendations: ecommerceagent.MockStyleRecommendations(brief, platform, "main", 3, "1:1")}
@@ -212,6 +221,9 @@ func TestEcommerceQueuedFeatureCheckPreservesAcceptedWork(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, db := newMediaRecoveryTestService(t)
+			// 本用例验证「电商关闭时已受理的任务仍继续执行」。默认值已改为开放电商，
+			// 必须显式写入关闭配置，否则未发送的任务也会被放行。
+			saveAdmissionFeatures(t, s, closedEcommerceFeatures())
 			project := &model.EcommerceProject{ID: newID(), UserID: "user", DraftJSON: "{}", PlanJSON: "{}", Revision: 1}
 			task := &model.Task{ID: newID(), UserID: "user", ProjectID: project.ID, Type: "canvas_text", Status: model.TaskStatusQueued, InputJSON: `{"mode":"text","config":{"channelId":"system","model":"test"}}`, RouteRun: 1, ProviderRequestID: tc.requestID}
 			order := &model.BillingOrder{ID: newID(), UserID: "user", TaskID: task.ID, IdempotencyKey: newID(), Status: model.BillingStatusReserved, AmountMicrocredits: 100, ReservedAmountMicrocredits: 100}

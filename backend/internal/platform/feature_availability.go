@@ -57,7 +57,7 @@ type PublicFeatureAvailability struct {
 }
 
 func DefaultFeatureAvailability() FeatureAvailability {
-	// 缺少配置代表尚未由运维接管；前台模型需要明确配置后才开放。
+	// 缺少配置代表尚未由运维接管，使用本默认值；前台模型仍需明确配置后才开放。
 	return FeatureAvailability{
 		WelcomeEnabled:               true,
 		ShortDramaEnabled:            true,
@@ -69,11 +69,13 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		SystemPluginsVisibleToUsers:  true,
 		InspirationSourcesVisible:    true,
 		TimelineTranscriptionEnabled: true,
-		ImageWorkbenchEnabled:        false,
-		VideoWorkbenchEnabled:        false,
+		// 电商 Agent 默认开放：商品图依赖 ImageWorkbench、商品视频依赖 VideoWorkbench，
+		// 后端 requireTaskGenerationFeatures 会逐个校验，四项必须一起打开才完整可用。
+		ImageWorkbenchEnabled:        true,
+		VideoWorkbenchEnabled:        true,
 		BatchVideoEnabled:            true,
-		EcommerceEnabled:             false,
-		EcommerceVideoEnabled:        false,
+		EcommerceEnabled:             true,
+		EcommerceVideoEnabled:        true,
 	}
 }
 
