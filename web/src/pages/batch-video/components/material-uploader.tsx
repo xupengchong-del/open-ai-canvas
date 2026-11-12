@@ -26,13 +26,9 @@ function numericTitle(title: string): number | null {
 
 // 数字命名的图片按数值升序（1、2、10），非数字命名和视频保持原有相对位置。
 function sortMaterialsByNumericTitle(items: BatchVideoMaterialInput[]): BatchVideoMaterialInput[] {
-    const indexes = items
-        .map((item, index) => (item.kind === "image" && numericTitle(item.title) !== null ? index : -1))
-        .filter((index) => index >= 0);
+    const indexes = items.map((item, index) => (item.kind === "image" && numericTitle(item.title) !== null ? index : -1)).filter((index) => index >= 0);
     if (indexes.length < 2) return items;
-    const ordered = indexes
-        .map((index) => items[index])
-        .sort((left, right) => (numericTitle(left.title) ?? 0) - (numericTitle(right.title) ?? 0));
+    const ordered = indexes.map((index) => items[index]).sort((left, right) => (numericTitle(left.title) ?? 0) - (numericTitle(right.title) ?? 0));
     const next = [...items];
     indexes.forEach((index, position) => {
         next[index] = ordered[position];
@@ -134,12 +130,7 @@ export function MaterialUploader({
                                 </div>
                                 {!compact ? (
                                     <div className="space-y-1.5 p-2">
-                                        <Input
-                                            size="small"
-                                            value={material.title}
-                                            placeholder="素材名称"
-                                            onChange={(event) => onMaterialsChange(materials.map((item, itemIndex) => (itemIndex === index ? { ...item, title: event.target.value } : item)))}
-                                        />
+                                        <Input size="small" value={material.title} placeholder="素材名称" onChange={(event) => onMaterialsChange(materials.map((item, itemIndex) => (itemIndex === index ? { ...item, title: event.target.value } : item)))} />
                                         <Input
                                             size="small"
                                             value={material.description}
@@ -179,12 +170,7 @@ export function MaterialUploader({
                         {documents.map((document, index) => (
                             <div key={index} className="rounded-lg border border-border/70 bg-surface p-2">
                                 <div className="flex items-center gap-2">
-                                    <Input
-                                        size="small"
-                                        value={document.name}
-                                        placeholder="文档名称"
-                                        onChange={(event) => onDocumentsChange(documents.map((item, itemIndex) => (itemIndex === index ? { ...item, name: event.target.value } : item)))}
-                                    />
+                                    <Input size="small" value={document.name} placeholder="文档名称" onChange={(event) => onDocumentsChange(documents.map((item, itemIndex) => (itemIndex === index ? { ...item, name: event.target.value } : item)))} />
                                     <Button size="small" type="text" danger icon={<Trash2 className="size-3.5" />} onClick={() => onDocumentsChange(documents.filter((_, itemIndex) => itemIndex !== index))} />
                                 </div>
                                 <Input.TextArea

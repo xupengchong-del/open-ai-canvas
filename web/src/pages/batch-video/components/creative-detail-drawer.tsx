@@ -68,8 +68,12 @@ export function CreativeDetailDrawer({
             width={720}
             extra={
                 <div className="flex gap-2">
-                    <Button icon={<RefreshCw className="size-3.5" />} loading={rematching} disabled={submitted || creative.matchStatus === "generating"} onClick={onRematch}>重新匹配</Button>
-                    <Button type="primary" icon={<Save className="size-3.5" />} loading={saving} disabled={submitted || !valid} onClick={() => onSave(draft)}>保存并转为待审</Button>
+                    <Button icon={<RefreshCw className="size-3.5" />} loading={rematching} disabled={submitted || creative.matchStatus === "generating"} onClick={onRematch}>
+                        重新匹配
+                    </Button>
+                    <Button type="primary" icon={<Save className="size-3.5" />} loading={saving} disabled={submitted || !valid} onClick={() => onSave(draft)}>
+                        保存并转为待审
+                    </Button>
                 </div>
             }
         >
@@ -81,14 +85,34 @@ export function CreativeDetailDrawer({
                     </div>
                     <div className="min-w-0 flex-1 space-y-2 text-xs">
                         <div className="flex flex-wrap gap-1.5">
-                            <Tag bordered={false} color={reviewStatusColor(creative.reviewStatus)}>{reviewStatusLabel(creative.reviewStatus)}</Tag>
+                            <Tag bordered={false} color={reviewStatusColor(creative.reviewStatus)}>
+                                {reviewStatusLabel(creative.reviewStatus)}
+                            </Tag>
                             <Tag bordered={false}>{templateLabel(creative.templateId)}</Tag>
-                            <Tag bordered={false}>{creative.durationSeconds}s · {creative.aspectRatio}</Tag>
+                            <Tag bordered={false}>
+                                {creative.durationSeconds}s · {creative.aspectRatio}
+                            </Tag>
                         </div>
-                        <p><span className="text-foreground/45">卖点：</span>{sellingPoint?.canonicalText || "未关联"}</p>
-                        <p><span className="text-foreground/45">匹配：</span>{creative.matchStatus} · {Math.round(creative.matchScore * 100)}% · {creative.matchMethod || "未匹配"}</p>
-                        {asset ? <p><span className="text-foreground/45">参考图说明：</span>{asset.description || asset.title}</p> : null}
-                        {creative.reviewNote ? <p className="text-rose-600 dark:text-rose-400"><span className="text-foreground/45">驳回原因：</span>{creative.reviewNote}</p> : null}
+                        <p>
+                            <span className="text-foreground/45">卖点：</span>
+                            {sellingPoint?.canonicalText || "未关联"}
+                        </p>
+                        <p>
+                            <span className="text-foreground/45">匹配：</span>
+                            {creative.matchStatus} · {Math.round(creative.matchScore * 100)}% · {creative.matchMethod || "未匹配"}
+                        </p>
+                        {asset ? (
+                            <p>
+                                <span className="text-foreground/45">参考图说明：</span>
+                                {asset.description || asset.title}
+                            </p>
+                        ) : null}
+                        {creative.reviewNote ? (
+                            <p className="text-rose-600 dark:text-rose-400">
+                                <span className="text-foreground/45">驳回原因：</span>
+                                {creative.reviewNote}
+                            </p>
+                        ) : null}
                     </div>
                 </div>
 
@@ -116,27 +140,52 @@ export function CreativeDetailDrawer({
                 <section className="rounded-xl border border-border/70 p-4">
                     <h3 className="text-sm font-semibold">结构化图片需求</h3>
                     <dl className="mt-3 grid grid-cols-[90px_1fr] gap-y-2 text-xs">
-                        <dt className="text-foreground/45">场景</dt><dd>{requirement.scene || "—"}</dd>
-                        <dt className="text-foreground/45">角度</dt><dd>{requirement.angle || "—"}</dd>
-                        <dt className="text-foreground/45">风格</dt><dd>{requirement.style || "—"}</dd>
-                        <dt className="text-foreground/45">必须包含</dt><dd>{requirement.requiredElements?.join("、") || "—"}</dd>
-                        <dt className="text-foreground/45">禁止出现</dt><dd>{requirement.forbiddenElements?.join("、") || "—"}</dd>
+                        <dt className="text-foreground/45">场景</dt>
+                        <dd>{requirement.scene || "—"}</dd>
+                        <dt className="text-foreground/45">角度</dt>
+                        <dd>{requirement.angle || "—"}</dd>
+                        <dt className="text-foreground/45">风格</dt>
+                        <dd>{requirement.style || "—"}</dd>
+                        <dt className="text-foreground/45">必须包含</dt>
+                        <dd>{requirement.requiredElements?.join("、") || "—"}</dd>
+                        <dt className="text-foreground/45">禁止出现</dt>
+                        <dd>{requirement.forbiddenElements?.join("、") || "—"}</dd>
                     </dl>
                 </section>
 
                 <section>
                     <h3 className="text-sm font-semibold">生成历史（{jobs.length}）</h3>
-                    {jobs.length > 0 ? <div className="mt-2 space-y-2">{jobs.map((job) => (
-                        <div key={job.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-active/40 px-3 py-2 text-xs">
-                            <span>{job.modelId || "自动路由"} · 尝试 {job.attemptsUsed} · 切换 {job.failoverCount}</span>
-                            <Tag bordered={false} color={jobStatusColor(job.status)}>{jobStatusLabel(job.status)}</Tag>
+                    {jobs.length > 0 ? (
+                        <div className="mt-2 space-y-2">
+                            {jobs.map((job) => (
+                                <div key={job.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-active/40 px-3 py-2 text-xs">
+                                    <span>
+                                        {job.modelId || "自动路由"} · 尝试 {job.attemptsUsed} · 切换 {job.failoverCount}
+                                    </span>
+                                    <Tag bordered={false} color={jobStatusColor(job.status)}>
+                                        {jobStatusLabel(job.status)}
+                                    </Tag>
+                                </div>
+                            ))}
                         </div>
-                    ))}</div> : <p className="mt-2 text-xs text-foreground/45">尚未提交生成。</p>}
+                    ) : (
+                        <p className="mt-2 text-xs text-foreground/45">尚未提交生成。</p>
+                    )}
                 </section>
 
                 <section>
                     <h3 className="text-sm font-semibold">同卖点创意</h3>
-                    {similar.length > 0 ? <ul className="mt-2 space-y-1.5 text-xs text-foreground/65">{similar.map((item) => <li key={item.id}>#{item.seq} {item.title}</li>)}</ul> : <p className="mt-2 text-xs text-foreground/45">没有其他同卖点创意。</p>}
+                    {similar.length > 0 ? (
+                        <ul className="mt-2 space-y-1.5 text-xs text-foreground/65">
+                            {similar.map((item) => (
+                                <li key={item.id}>
+                                    #{item.seq} {item.title}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="mt-2 text-xs text-foreground/45">没有其他同卖点创意。</p>
+                    )}
                 </section>
             </div>
         </Drawer>

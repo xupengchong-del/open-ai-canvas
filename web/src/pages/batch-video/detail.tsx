@@ -204,7 +204,9 @@ export default function BatchVideoDetailPage() {
         if (!scheduledAt) return;
         const delay = Math.max(2000, new Date(scheduledAt).getTime() - Date.now() + 2000);
         if (delay > 2_147_483_647) return;
-        const timer = window.setTimeout(() => { void refresh(true); }, delay);
+        const timer = window.setTimeout(() => {
+            void refresh(true);
+        }, delay);
         return () => window.clearTimeout(timer);
     }, [detail?.project.scheduledStartAt, refresh]);
 
@@ -254,7 +256,8 @@ export default function BatchVideoDetailPage() {
         if (!detail) return;
         if (persist) writeAnalysisFailurePolicy(askAgain ? "ask" : "abort");
         setAbortingTask("analysis");
-        void batchVideoApi.cancelAnalysis(detail.project.id)
+        void batchVideoApi
+            .cancelAnalysis(detail.project.id)
             .then((next) => {
                 setDetail(next);
                 setAnalysisProgressOpen(false);
@@ -268,7 +271,8 @@ export default function BatchVideoDetailPage() {
         if (!detail) return;
         if (persist) writeAnalysisFailurePolicy(askAgain ? "ask" : "continue");
         setContinuingAnalysis(true);
-        void batchVideoApi.continueAnalysis(detail.project.id)
+        void batchVideoApi
+            .continueAnalysis(detail.project.id)
             .then((next) => {
                 setDetail(next);
                 message.success("已跳过失败图片，继续分析剩余素材");
@@ -298,7 +302,8 @@ export default function BatchVideoDetailPage() {
     const abortPlanning = () => {
         if (!detail) return;
         setAbortingTask("planning");
-        void batchVideoApi.cancelPlanning(detail.project.id)
+        void batchVideoApi
+            .cancelPlanning(detail.project.id)
             .then((next) => {
                 setDetail(next);
                 setPlanningProgressOpen(false);
@@ -396,7 +401,8 @@ export default function BatchVideoDetailPage() {
     const confirmPlan = (payload: { count: number; mode: string; templates: string[] }) => {
         if (!detail) return;
         setPlanning(true);
-        void batchVideoApi.generateCreatives(detail.project.id, payload)
+        void batchVideoApi
+            .generateCreatives(detail.project.id, payload)
             .then((result) => {
                 setPlanOpen(false);
                 setPlanningRoundIds(result.roundIds || []);
@@ -514,16 +520,17 @@ export default function BatchVideoDetailPage() {
         if (!detail) return;
         const selected = payload.allApproved ? [] : Array.from(submitSelection);
         setSubmitting(true);
-        void batchVideoApi.submit(detail.project.id, {
-            creativeIds: selected,
-            allApproved: payload.allApproved,
-            generationMode: payload.generationMode,
-            mode: payload.mode,
-            models: payload.modelIds.map((channelModelId) => {
-                const model = models.find((item) => item.channelModelId === channelModelId);
-                return { channelModelId, modelId: channelModelId, model: model?.model || "" };
-            }),
-        })
+        void batchVideoApi
+            .submit(detail.project.id, {
+                creativeIds: selected,
+                allApproved: payload.allApproved,
+                generationMode: payload.generationMode,
+                mode: payload.mode,
+                models: payload.modelIds.map((channelModelId) => {
+                    const model = models.find((item) => item.channelModelId === channelModelId);
+                    return { channelModelId, modelId: channelModelId, model: model?.model || "" };
+                }),
+            })
             .then((result) => {
                 setSubmitOpen(false);
                 setSubmitSelection(new Set());
@@ -569,11 +576,12 @@ export default function BatchVideoDetailPage() {
             content: "会取消已提交待开始、定时等待和排队中的任务；已提交给模型的任务和已完成产物不受影响。",
             okText: "取消未开始项",
             okButtonProps: { danger: true },
-            onOk: () => runAction("cancel-pending", async () => {
-                const result = await batchVideoApi.cancelPending(detail.project.id);
-                await refresh(true);
-                message.success(`已取消 ${result.cancelled} 个未开始任务`);
-            }),
+            onOk: () =>
+                runAction("cancel-pending", async () => {
+                    const result = await batchVideoApi.cancelPending(detail.project.id);
+                    await refresh(true);
+                    message.success(`已取消 ${result.cancelled} 个未开始任务`);
+                }),
         });
     };
 
@@ -606,7 +614,8 @@ export default function BatchVideoDetailPage() {
     const saveSettings = (next: BatchVideoProjectSettings) => {
         if (!detail) return;
         setSavingSettings(true);
-        void batchVideoApi.updateSettings(detail.project.id, next)
+        void batchVideoApi
+            .updateSettings(detail.project.id, next)
             .then((updated) => {
                 setDetail(updated);
                 setSettingsOpen(false);
@@ -619,7 +628,8 @@ export default function BatchVideoDetailPage() {
     const confirmAddBatch = (payload: { label: string; materials: BatchVideoMaterialInput[]; documents: BatchVideoDocumentInput[] }) => {
         if (!detail) return;
         setAddingBatch(true);
-        void batchVideoApi.addMaterialBatch(detail.project.id, payload)
+        void batchVideoApi
+            .addMaterialBatch(detail.project.id, payload)
             .then(async () => {
                 setAddBatchOpen(false);
                 const current = await loadDetail(true);
@@ -685,8 +695,18 @@ export default function BatchVideoDetailPage() {
             mode={mode}
             onReviewSelectChange={setReviewSelection}
             onSubmitSelectChange={setSubmitSelection}
-            onPageChange={(page, pageSize) => { setCreativePage(page); setCreativePageSize(pageSize); void loadCreatives(page, pageSize); }}
-            onFilterChange={(value) => { setReviewFilter(value); setCreativePage(1); setReviewSelection(new Set()); setSubmitSelection(new Set()); void loadCreatives(1, creativePageSize, value); }}
+            onPageChange={(page, pageSize) => {
+                setCreativePage(page);
+                setCreativePageSize(pageSize);
+                void loadCreatives(page, pageSize);
+            }}
+            onFilterChange={(value) => {
+                setReviewFilter(value);
+                setCreativePage(1);
+                setReviewSelection(new Set());
+                setSubmitSelection(new Set());
+                void loadCreatives(1, creativePageSize, value);
+            }}
             onReview={requestReview}
             onBatchReview={batchReview}
             onGenerateReference={generateReference}
@@ -702,7 +722,11 @@ export default function BatchVideoDetailPage() {
             pageSize={jobPageSize}
             loading={jobLoading}
             actionLoading={actionLoading}
-            onPageChange={(page, pageSize) => { setJobPage(page); setJobPageSize(pageSize); void loadJobs(page, pageSize); }}
+            onPageChange={(page, pageSize) => {
+                setJobPage(page);
+                setJobPageSize(pageSize);
+                void loadJobs(page, pageSize);
+            }}
             onRetry={retryJob}
             onRetryFailed={retryFailed}
             onCancelPending={cancelPending}
@@ -718,13 +742,7 @@ export default function BatchVideoDetailPage() {
                 return (
                     <div className="space-y-4">
                         <ProductProfilePanel detail={detail} />
-                        <MaterialsPanel
-                            detail={detail}
-                            actionLoading={actionLoading}
-                            onDeleteMaterial={deleteMaterial}
-                            onDeleteBatch={deleteMaterialBatch}
-                            onClearAll={clearMaterials}
-                        />
+                        <MaterialsPanel detail={detail} actionLoading={actionLoading} onDeleteMaterial={deleteMaterial} onDeleteBatch={deleteMaterialBatch} onClearAll={clearMaterials} />
                     </div>
                 );
             case "creative":
@@ -732,7 +750,12 @@ export default function BatchVideoDetailPage() {
             case "review":
                 return creativePanel("review");
             case "validation":
-                return <div className="space-y-4"><ValidationPanel detail={detail} />{jobsPanel}</div>;
+                return (
+                    <div className="space-y-4">
+                        <ValidationPanel detail={detail} />
+                        {jobsPanel}
+                    </div>
+                );
             case "mass":
                 return <MassPanel detail={detail} actionLoading={actionLoading} onGenerate={generate} onUnlock={unlockMass} />;
             default:
@@ -776,7 +799,18 @@ export default function BatchVideoDetailPage() {
                 );
             case "review":
                 return (
-                    <Button type="primary" icon={<Zap className="size-4" />} disabled={detail.counts.approved === 0} onClick={() => { setSubmitOpen(true); void batchVideoApi.listModels().then(setModels).catch((err) => message.error(err instanceof Error ? err.message : "加载视频模型失败")); }}>
+                    <Button
+                        type="primary"
+                        icon={<Zap className="size-4" />}
+                        disabled={detail.counts.approved === 0}
+                        onClick={() => {
+                            setSubmitOpen(true);
+                            void batchVideoApi
+                                .listModels()
+                                .then(setModels)
+                                .catch((err) => message.error(err instanceof Error ? err.message : "加载视频模型失败"));
+                        }}
+                    >
                         提交生成
                     </Button>
                 );
@@ -792,14 +826,13 @@ export default function BatchVideoDetailPage() {
         detail.project.status === "paused" ? "已暂停" : "",
         detail.counts.submitted > 0 ? `待开始 ${detail.counts.submitted} 条` : "",
         detail.project.scheduledStartAt ? `定时 ${new Date(detail.project.scheduledStartAt).toLocaleString("zh-CN")}` : "",
-    ].filter(Boolean).join(" · ");
+    ]
+        .filter(Boolean)
+        .join(" · ");
 
     return (
         <WorkspacePage>
-            <PageHeader
-                title={detail.project.name}
-                description={stageSummary}
-            />
+            <PageHeader title={detail.project.name} description={stageSummary} />
 
             {detail.validation.passed && !detail.project.massUnlockedAt ? (
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
@@ -807,7 +840,9 @@ export default function BatchVideoDetailPage() {
                         <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">标准验收已通过</div>
                         <p className="text-xs text-emerald-700/70 dark:text-emerald-300/70">确认验收结果后可解锁量产，单轮最多 1000 条创意。</p>
                     </div>
-                    <Button type="primary" loading={actionLoading === "unlock"} onClick={unlockMass}>解锁量产</Button>
+                    <Button type="primary" loading={actionLoading === "unlock"} onClick={unlockMass}>
+                        解锁量产
+                    </Button>
                 </div>
             ) : null}
 
@@ -816,9 +851,15 @@ export default function BatchVideoDetailPage() {
                     <div className="rounded-xl border border-border/70 bg-surface p-3">
                         <WorkflowNav steps={workflow} activeKey={step} onSelect={selectStep} />
                         <div className="mt-3 grid gap-2 border-t border-border/60 pt-3">
-                            <Button className="!justify-start" icon={<ArrowLeft className="size-4" />} onClick={() => navigate("/batch-video")}>返回列表</Button>
-                            <Button className="!justify-start" icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void refresh(false)}>刷新项目</Button>
-                            <Button className="!justify-start" icon={<Settings2 className="size-4" />} onClick={() => setSettingsOpen(true)}>项目设置</Button>
+                            <Button className="!justify-start" icon={<ArrowLeft className="size-4" />} onClick={() => navigate("/batch-video")}>
+                                返回列表
+                            </Button>
+                            <Button className="!justify-start" icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void refresh(false)}>
+                                刷新项目
+                            </Button>
+                            <Button className="!justify-start" icon={<Settings2 className="size-4" />} onClick={() => setSettingsOpen(true)}>
+                                项目设置
+                            </Button>
                         </div>
                     </div>
                 </aside>
@@ -844,7 +885,17 @@ export default function BatchVideoDetailPage() {
 
             <ProjectSettingsDrawer key={settingsOpen ? "settings-open" : "settings-closed"} open={settingsOpen} detail={detail} saving={savingSettings} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />
             <PlanDialog key={planOpen ? "plan-open" : "plan-closed"} open={planOpen} detail={detail} settings={settings} submitting={planning} onClose={() => setPlanOpen(false)} onConfirm={confirmPlan} />
-            <SubmitDialog key={submitOpen ? "submit-open" : "submit-closed"} open={submitOpen} detail={detail} models={models} settings={settings} selectedIds={Array.from(submitSelection)} submitting={submitting} onClose={() => setSubmitOpen(false)} onConfirm={confirmSubmit} />
+            <SubmitDialog
+                key={submitOpen ? "submit-open" : "submit-closed"}
+                open={submitOpen}
+                detail={detail}
+                models={models}
+                settings={settings}
+                selectedIds={Array.from(submitSelection)}
+                submitting={submitting}
+                onClose={() => setSubmitOpen(false)}
+                onConfirm={confirmSubmit}
+            />
             <AddBatchModal key={addBatchOpen ? "batch-open" : "batch-closed"} open={addBatchOpen} hasMaterials={hasMaterials} submitting={addingBatch} onClose={() => setAddBatchOpen(false)} onConfirm={confirmAddBatch} />
             {activeCreative ? (
                 <CreativeDetailDrawer
@@ -865,17 +916,13 @@ export default function BatchVideoDetailPage() {
                 okText="确认驳回"
                 okButtonProps={{ danger: true, disabled: !rejectNote.trim(), loading: actionLoading === "reject-confirm" }}
                 onOk={confirmReject}
-                onCancel={() => { if (actionLoading !== "reject-confirm") setRejectIds([]); }}
+                onCancel={() => {
+                    if (actionLoading !== "reject-confirm") setRejectIds([]);
+                }}
             >
                 <label className="grid gap-2 py-2 text-sm">
                     <span>驳回原因（必填）</span>
-                    <Input.TextArea
-                        value={rejectNote}
-                        onChange={(event) => setRejectNote(event.target.value)}
-                        placeholder="例如：文案不合格、图片不匹配、合规风险、产品不一致、完全重复"
-                        autoSize={{ minRows: 3, maxRows: 6 }}
-                        maxLength={500}
-                    />
+                    <Input.TextArea value={rejectNote} onChange={(event) => setRejectNote(event.target.value)} placeholder="例如：文案不合格、图片不匹配、合规风险、产品不一致、完全重复" autoSize={{ minRows: 3, maxRows: 6 }} maxLength={500} />
                 </label>
             </Modal>
             <AnalysisProgressDialog

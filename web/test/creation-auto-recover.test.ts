@@ -27,10 +27,7 @@ function task(id: string, extra: Partial<GenerationTask> = {}): GenerationTask {
 
 test("生成中的消息在后端已成功时自动补回结果", () => {
     const messages = [message("u1", "user", { mode: "video" }), message("a1", "assistant", { mode: "video", status: "pending", taskIds: ["t1"] })];
-    const recovered = autoRecoverCreationMessages(
-        [conversation(messages)],
-        [task("t1", { resultJson: JSON.stringify({ video: { url: "https://example.com/v.mp4" } }) })],
-    );
+    const recovered = autoRecoverCreationMessages([conversation(messages)], [task("t1", { resultJson: JSON.stringify({ video: { url: "https://example.com/v.mp4" } }) })]);
     expect(recovered.recoveredCount).toBe(1);
     const updated = recovered.conversations[0].messages[1];
     expect(updated.status).toBe("done");
@@ -38,14 +35,8 @@ test("生成中的消息在后端已成功时自动补回结果", () => {
 });
 
 test("失败的消息在后端已成功时也恢复，并清掉失败原因", () => {
-    const messages = [
-        message("u1", "user", { mode: "image" }),
-        message("a1", "assistant", { mode: "image", status: "error", error: "旧失败", errorKind: "task", taskIds: ["t2"] }),
-    ];
-    const recovered = autoRecoverCreationMessages(
-        [conversation(messages)],
-        [task("t2", { type: "image", resultJson: JSON.stringify({ images: [{ url: "https://example.com/i.png" }] }) })],
-    );
+    const messages = [message("u1", "user", { mode: "image" }), message("a1", "assistant", { mode: "image", status: "error", error: "旧失败", errorKind: "task", taskIds: ["t2"] })];
+    const recovered = autoRecoverCreationMessages([conversation(messages)], [task("t2", { type: "image", resultJson: JSON.stringify({ images: [{ url: "https://example.com/i.png" }] }) })]);
     expect(recovered.recoveredCount).toBe(1);
     const updated = recovered.conversations[0].messages[1];
     expect(updated.status).toBe("done");
@@ -54,14 +45,8 @@ test("失败的消息在后端已成功时也恢复，并清掉失败原因", ()
 });
 
 test("通过 retryOf 与 attemptGroupId 也能匹配到任务", () => {
-    const messages = [
-        message("u1", "user", { mode: "video" }),
-        message("a1", "assistant", { mode: "video", status: "pending", taskIds: ["orig"] }),
-    ];
-    const recovered = autoRecoverCreationMessages(
-        [conversation(messages)],
-        [task("retry-1", { retryOf: "orig", resultJson: JSON.stringify({ video: { storageKey: "k1" } }) })],
-    );
+    const messages = [message("u1", "user", { mode: "video" }), message("a1", "assistant", { mode: "video", status: "pending", taskIds: ["orig"] })];
+    const recovered = autoRecoverCreationMessages([conversation(messages)], [task("retry-1", { retryOf: "orig", resultJson: JSON.stringify({ video: { storageKey: "k1" } }) })]);
     expect(recovered.recoveredCount).toBe(1);
     expect(recovered.conversations[0].messages[1].resultStorageKeys).toEqual(["k1"]);
 });
@@ -80,14 +65,8 @@ test("没有成功的任务时不做任何改动", () => {
 });
 
 test("已完成的消息不会被重复处理", () => {
-    const messages = [
-        message("u1", "user", { mode: "video" }),
-        message("a1", "assistant", { mode: "video", status: "done", resultUrls: ["https://example.com/old.mp4"], taskIds: ["t5"] }),
-    ];
-    const recovered = autoRecoverCreationMessages(
-        [conversation(messages)],
-        [task("t5", { resultJson: JSON.stringify({ video: { url: "https://example.com/new.mp4" } }) })],
-    );
+    const messages = [message("u1", "user", { mode: "video" }), message("a1", "assistant", { mode: "video", status: "done", resultUrls: ["https://example.com/old.mp4"], taskIds: ["t5"] })];
+    const recovered = autoRecoverCreationMessages([conversation(messages)], [task("t5", { resultJson: JSON.stringify({ video: { url: "https://example.com/new.mp4" } }) })]);
     expect(recovered.recoveredCount).toBe(0);
     expect(recovered.conversations[0].messages[1].resultUrls).toEqual(["https://example.com/old.mp4"]);
 });

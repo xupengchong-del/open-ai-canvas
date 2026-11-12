@@ -101,7 +101,15 @@ export function JobsPanel({
                         <Button type="primary" size="small" icon={<Play className="size-3.5" />} loading={actionLoading === "start-generation"} onClick={() => onStart()}>
                             {project.scheduledStartAt ? "立即开始" : "开始生成"}
                         </Button>
-                        <Button size="small" icon={<CalendarClock className="size-3.5" />} disabled={actionLoading === "start-generation"} onClick={() => { setScheduleAt(project.scheduledStartAt ? dayjs(project.scheduledStartAt) : dayjs().add(1, "hour").startOf("minute")); setScheduleOpen(true); }}>
+                        <Button
+                            size="small"
+                            icon={<CalendarClock className="size-3.5" />}
+                            disabled={actionLoading === "start-generation"}
+                            onClick={() => {
+                                setScheduleAt(project.scheduledStartAt ? dayjs(project.scheduledStartAt) : dayjs().add(1, "hour").startOf("minute"));
+                                setScheduleOpen(true);
+                            }}
+                        >
                             {project.scheduledStartAt ? "修改定时" : "定时生成"}
                         </Button>
                     </div>
@@ -112,14 +120,11 @@ export function JobsPanel({
                 <div className="rounded-xl border border-border/70 bg-surface px-4 py-3">
                     <div className="flex items-center justify-between text-xs text-foreground/55">
                         <span>生成本轮进度</span>
-                        <span className="tabular-nums">已完成 {finished}/{counts.jobsTotal}</span>
+                        <span className="tabular-nums">
+                            已完成 {finished}/{counts.jobsTotal}
+                        </span>
                     </div>
-                    <Progress
-                        className="!mb-0 !mt-1"
-                        percent={generationPercent}
-                        status={generationActive ? "active" : counts.failed > 0 ? "exception" : "success"}
-                        size="small"
-                    />
+                    <Progress className="!mb-0 !mt-1" percent={generationPercent} status={generationActive ? "active" : counts.failed > 0 ? "exception" : "success"} size="small" />
                 </div>
             ) : null}
 
@@ -127,8 +132,16 @@ export function JobsPanel({
                 <div className="flex flex-wrap items-center gap-2 text-xs text-foreground/55">
                     <Video className="size-4" />
                     <span>{counts.approved} 条已通过创意可提交</span>
-                    {paused ? <Tag color="warning" bordered={false}>项目已暂停</Tag> : null}
-                    {project.massUnlockedAt ? <Tag color="success" bordered={false}>量产已解锁</Tag> : null}
+                    {paused ? (
+                        <Tag color="warning" bordered={false}>
+                            项目已暂停
+                        </Tag>
+                    ) : null}
+                    {project.massUnlockedAt ? (
+                        <Tag color="success" bordered={false}>
+                            量产已解锁
+                        </Tag>
+                    ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <Button size="small" icon={paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />} onClick={paused ? onResume : onPause} loading={actionLoading === "pause" || actionLoading === "resume"}>
@@ -194,10 +207,14 @@ export function JobsPanel({
                                                     </div>
                                                 ) : null}
                                             </td>
-                                            <td className="px-3 py-2.5 tabular-nums text-foreground/55">{job.attemptsUsed} / {job.failoverCount}</td>
+                                            <td className="px-3 py-2.5 tabular-nums text-foreground/55">
+                                                {job.attemptsUsed} / {job.failoverCount}
+                                            </td>
                                             <td className="max-w-[240px] px-3 py-2.5">
                                                 {job.lastError ? (
-                                                    <span className="line-clamp-2 text-rose-600 dark:text-rose-400" title={job.lastError}>{job.lastError}</span>
+                                                    <span className="line-clamp-2 text-rose-600 dark:text-rose-400" title={job.lastError}>
+                                                        {job.lastError}
+                                                    </span>
                                                 ) : (
                                                     <span className="text-foreground/30">—</span>
                                                 )}
@@ -229,45 +246,63 @@ export function JobsPanel({
                 )}
             </div>
             <PaginationBar current={page} pageSize={pageSize} total={counts.jobsTotal} onChange={onPageChange} itemLabel="条任务" />
-            <Modal
-                open={scheduleOpen}
-                title="定时开始生成"
-                okText="保存定时"
-                onOk={confirmSchedule}
-                onCancel={() => setScheduleOpen(false)}
-            >
+            <Modal open={scheduleOpen} title="定时开始生成" okText="保存定时" onOk={confirmSchedule} onCancel={() => setScheduleOpen(false)}>
                 <div className="grid gap-3 py-2">
                     <p className="text-sm text-foreground/60">到达设定时间后，已提交的 {counts.submitted} 条任务会自动开始；开始前仍可取消未开始项。</p>
-                    <DatePicker
-                        showTime={{ format: "HH:mm" }}
-                        format="YYYY-MM-DD HH:mm"
-                        value={scheduleAt}
-                        disabledDate={(value) => value.isBefore(dayjs(), "day")}
-                        onChange={(value) => setScheduleAt(value)}
-                        className="w-full"
-                    />
+                    <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" value={scheduleAt} disabledDate={(value) => value.isBefore(dayjs(), "day")} onChange={(value) => setScheduleAt(value)} className="w-full" />
                 </div>
             </Modal>
             <Modal open={Boolean(attemptJob)} title="任务尝试与模型切换历史" footer={null} width={860} onCancel={() => setAttemptJob(null)}>
                 {attemptsLoading ? (
-                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-foreground/50"><Loader2 className="size-4 animate-spin" />加载历史</div>
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-foreground/50">
+                        <Loader2 className="size-4 animate-spin" />
+                        加载历史
+                    </div>
                 ) : (
                     <div className="overflow-x-auto py-2">
                         <table className="w-full min-w-[720px] text-left text-xs">
-                            <thead className="text-foreground/45"><tr><th className="px-2 py-2">Attempt</th><th className="px-2 py-2">重试轮次</th><th className="px-2 py-2">模型</th><th className="px-2 py-2">任务 ID</th><th className="px-2 py-2">状态</th><th className="px-2 py-2">切换来源 / 错误</th><th className="px-2 py-2">开始 / 结束</th></tr></thead>
+                            <thead className="text-foreground/45">
+                                <tr>
+                                    <th className="px-2 py-2">Attempt</th>
+                                    <th className="px-2 py-2">重试轮次</th>
+                                    <th className="px-2 py-2">模型</th>
+                                    <th className="px-2 py-2">任务 ID</th>
+                                    <th className="px-2 py-2">状态</th>
+                                    <th className="px-2 py-2">切换来源 / 错误</th>
+                                    <th className="px-2 py-2">开始 / 结束</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 {attempts.map((attempt) => (
                                     <tr key={attempt.id} className="border-t border-border/50 align-top">
                                         <td className="px-2 py-2">#{attempt.attemptNo + 1}</td>
                                         <td className="px-2 py-2">{attempt.retryRound}</td>
                                         <td className="px-2 py-2">{attempt.modelId}</td>
-                                        <td className="max-w-[130px] truncate px-2 py-2" title={attempt.taskId}>{attempt.taskId}</td>
-                                        <td className="px-2 py-2"><Tag bordered={false} color={jobStatusColor(attempt.status)}>{jobStatusLabel(attempt.status)}</Tag></td>
-                                        <td className="max-w-[240px] px-2 py-2">{attempt.switchedFromModelId ? <div>从 {attempt.switchedFromModelId} 切换</div> : null}<div className="text-rose-600 dark:text-rose-400">{attempt.error}</div></td>
-                                        <td className="px-2 py-2 text-foreground/45"><div>{attempt.startedAt ? new Date(attempt.startedAt).toLocaleString("zh-CN") : "—"}</div><div>{attempt.finishedAt ? new Date(attempt.finishedAt).toLocaleString("zh-CN") : "—"}</div></td>
+                                        <td className="max-w-[130px] truncate px-2 py-2" title={attempt.taskId}>
+                                            {attempt.taskId}
+                                        </td>
+                                        <td className="px-2 py-2">
+                                            <Tag bordered={false} color={jobStatusColor(attempt.status)}>
+                                                {jobStatusLabel(attempt.status)}
+                                            </Tag>
+                                        </td>
+                                        <td className="max-w-[240px] px-2 py-2">
+                                            {attempt.switchedFromModelId ? <div>从 {attempt.switchedFromModelId} 切换</div> : null}
+                                            <div className="text-rose-600 dark:text-rose-400">{attempt.error}</div>
+                                        </td>
+                                        <td className="px-2 py-2 text-foreground/45">
+                                            <div>{attempt.startedAt ? new Date(attempt.startedAt).toLocaleString("zh-CN") : "—"}</div>
+                                            <div>{attempt.finishedAt ? new Date(attempt.finishedAt).toLocaleString("zh-CN") : "—"}</div>
+                                        </td>
                                     </tr>
                                 ))}
-                                {attempts.length === 0 ? <tr><td colSpan={7} className="px-2 py-10 text-center text-foreground/45">还没有 attempt 记录</td></tr> : null}
+                                {attempts.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="px-2 py-10 text-center text-foreground/45">
+                                            还没有 attempt 记录
+                                        </td>
+                                    </tr>
+                                ) : null}
                             </tbody>
                         </table>
                     </div>

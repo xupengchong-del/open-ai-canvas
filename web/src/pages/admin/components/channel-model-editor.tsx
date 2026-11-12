@@ -229,13 +229,17 @@ export function ChannelModelEditor({
         busyRef.current = true;
         setTesting(true);
         try {
-            const result = await testAdminChannelModel(channel.id, {
-                modelKey: values.modelKey.trim(),
-                providerModelKey: upstreamModel,
-                capability: values.capability,
-                protocol: values.protocol,
-                capabilityConfig,
-            }, controller.signal);
+            const result = await testAdminChannelModel(
+                channel.id,
+                {
+                    modelKey: values.modelKey.trim(),
+                    providerModelKey: upstreamModel,
+                    capability: values.capability,
+                    protocol: values.protocol,
+                    capabilityConfig,
+                },
+                controller.signal,
+            );
             message.success(`模型测试通过，耗时 ${(result.durationMs / 1000).toFixed(2)} 秒`);
         } catch (error) {
             if (controller.signal.aborted) {

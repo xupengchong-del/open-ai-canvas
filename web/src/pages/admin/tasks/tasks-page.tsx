@@ -17,14 +17,7 @@ import { AdminDataTable, AdminFilterChip, AdminStatusBadge, AdminTableEmpty, Pag
 import { Select } from "@/pages/admin/ui/controls";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { apiBaseURL } from "@/services/api/request";
-import {
-    listAdminAnalyticsUsers,
-    listAdminTasks,
-    listAdminTaskUserStats,
-    type AdminTaskMonitorCounts,
-    type AdminTaskMonitorRow,
-    type AdminTaskUserStat,
-} from "@/services/api/auth";
+import { listAdminAnalyticsUsers, listAdminTasks, listAdminTaskUserStats, type AdminTaskMonitorCounts, type AdminTaskMonitorRow, type AdminTaskUserStat } from "@/services/api/auth";
 
 type RangePreset = "1h" | "24h" | "7d" | "today" | "custom";
 
@@ -89,10 +82,7 @@ export default function TaskMonitorPage() {
 
     const range = useMemo(() => resolveRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
     const summaryPreset = userRangeParam ? normalizePreset(userRangeParam) : "page";
-    const summaryRange = useMemo(
-        () => (summaryPreset === "page" ? range : resolveRange(summaryPreset, userFrom, userTo)),
-        [summaryPreset, userFrom, userTo, range],
-    );
+    const summaryRange = useMemo(() => (summaryPreset === "page" ? range : resolveRange(summaryPreset, userFrom, userTo)), [summaryPreset, userFrom, userTo, range]);
     const hasFilters = Boolean(keyword || status !== "all" || capability !== "all" || userId);
 
     const updateUrl = (patch: Record<string, string | number>, replace = false) => {
@@ -182,10 +172,7 @@ export default function TaskMonitorPage() {
     // 按用户汇总：既有维度走 analytics，成功/失败走任务指标，两边按 userId 合并。
     const loadUserStats = useCallback(async () => {
         try {
-            const [analytics, metrics] = await Promise.all([
-                listAdminAnalyticsUsers({ from: summaryRange.from, to: summaryRange.to }),
-                listAdminTaskUserStats({ from: summaryRange.from, to: summaryRange.to }),
-            ]);
+            const [analytics, metrics] = await Promise.all([listAdminAnalyticsUsers({ from: summaryRange.from, to: summaryRange.to }), listAdminTaskUserStats({ from: summaryRange.from, to: summaryRange.to })]);
             setAnalyticsUsers(analytics.users);
             setUserStats(metrics.users);
         } catch {
@@ -245,7 +232,11 @@ export default function TaskMonitorPage() {
             title: "时间",
             key: "createdAt",
             width: 132,
-            render: (_, task) => <span className="tabular-nums" title={formatTime(task.createdAt)}>{formatCompactTime(task.createdAt)}</span>,
+            render: (_, task) => (
+                <span className="tabular-nums" title={formatTime(task.createdAt)}>
+                    {formatCompactTime(task.createdAt)}
+                </span>
+            ),
         },
         {
             title: "用户",
@@ -268,7 +259,10 @@ export default function TaskMonitorPage() {
                 <div className="flex flex-col gap-1">
                     <AdminStatusBadge {...statusBadge(task.status)} />
                     {task.status === "running" || task.status === "queued" ? (
-                        <span className="text-xs tabular-nums text-foreground/50">{task.stage || "等待中"}{task.progress > 0 ? ` · ${task.progress}%` : ""}</span>
+                        <span className="text-xs tabular-nums text-foreground/50">
+                            {task.stage || "等待中"}
+                            {task.progress > 0 ? ` · ${task.progress}%` : ""}
+                        </span>
                     ) : null}
                 </div>
             ),
@@ -298,7 +292,14 @@ export default function TaskMonitorPage() {
             title: "失败原因",
             key: "error",
             ellipsis: true,
-            render: (_, task) => (task.error ? <span className="admin-log-error" title={task.error}>{task.error}</span> : <span className="text-foreground/35">--</span>),
+            render: (_, task) =>
+                task.error ? (
+                    <span className="admin-log-error" title={task.error}>
+                        {task.error}
+                    </span>
+                ) : (
+                    <span className="text-foreground/35">--</span>
+                ),
         },
     ];
 
@@ -317,7 +318,13 @@ export default function TaskMonitorPage() {
         { title: "任务数", key: "tasks", width: 88, align: "right", render: (_, row) => <span className="tabular-nums">{row.tasks}</span> },
         { title: "成功", key: "succeeded", width: 80, align: "right", render: (_, row) => <span className="tabular-nums text-foreground/75">{row.succeeded}</span> },
         { title: "失败", key: "failed", width: 80, align: "right", render: (_, row) => <span className={`tabular-nums ${row.failed > 0 ? "admin-log-error" : "text-foreground/75"}`}>{row.failed}</span> },
-        { title: "成功率", key: "rate", width: 92, align: "right", render: (_, row) => <span className="tabular-nums text-foreground/75">{row.succeeded + row.failed > 0 ? `${Math.round((row.succeeded / (row.succeeded + row.failed)) * 100)}%` : "--"}</span> },
+        {
+            title: "成功率",
+            key: "rate",
+            width: 92,
+            align: "right",
+            render: (_, row) => <span className="tabular-nums text-foreground/75">{row.succeeded + row.failed > 0 ? `${Math.round((row.succeeded / (row.succeeded + row.failed)) * 100)}%` : "--"}</span>,
+        },
         { title: "活跃天数", key: "activeDays", width: 96, align: "right", render: (_, row) => <span className="tabular-nums text-foreground/70">{row.activeDays}</span> },
         { title: "Agent 消息", key: "agentMessages", width: 104, align: "right", render: (_, row) => <span className="tabular-nums text-foreground/70">{row.agentMessages}</span> },
         { title: "画布天数", key: "canvasDays", width: 96, align: "right", render: (_, row) => <span className="tabular-nums text-foreground/70">{row.canvasDays}</span> },
@@ -338,7 +345,14 @@ export default function TaskMonitorPage() {
                         {autoRefresh ? "暂停刷新" : "自动刷新"}
                     </Button>
                     {!autoRefresh ? <span className="text-xs text-foreground/45">自动刷新已暂停</span> : null}
-                    <Button size="small" icon={<RefreshCw className="size-4" />} onClick={() => { void loadTasks(true); void loadUserStats(); }}>
+                    <Button
+                        size="small"
+                        icon={<RefreshCw className="size-4" />}
+                        onClick={() => {
+                            void loadTasks(true);
+                            void loadUserStats();
+                        }}
+                    >
                         刷新
                     </Button>
                 </div>
@@ -369,7 +383,17 @@ export default function TaskMonitorPage() {
                     skeletonColumns={8}
                     empty={
                         loadError ? (
-                            <Alert type="error" showIcon title="任务列表读取失败" description={loadError} action={<Button size="small" onClick={() => setRetry((value) => value + 1)}>重试</Button>} />
+                            <Alert
+                                type="error"
+                                showIcon
+                                title="任务列表读取失败"
+                                description={loadError}
+                                action={
+                                    <Button size="small" onClick={() => setRetry((value) => value + 1)}>
+                                        重试
+                                    </Button>
+                                }
+                            />
                         ) : (
                             <AdminTableEmpty filtered={hasFilters} />
                         )
@@ -391,7 +415,13 @@ export default function TaskMonitorPage() {
             <div className="mt-6">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                     <h2 className="text-sm font-medium">按用户汇总</h2>
-                    <Select aria-label="按用户汇总的时间范围" className="w-32" value={summaryPreset} options={[{ label: "跟随列表", value: "page" }, ...RANGE_OPTIONS.map((item) => ({ label: item.label, value: item.value }))]} onChange={(value) => changeSummaryRange(String(value))} />
+                    <Select
+                        aria-label="按用户汇总的时间范围"
+                        className="w-32"
+                        value={summaryPreset}
+                        options={[{ label: "跟随列表", value: "page" }, ...RANGE_OPTIONS.map((item) => ({ label: item.label, value: item.value }))]}
+                        onChange={(value) => changeSummaryRange(String(value))}
+                    />
                     {summaryPreset === "custom" ? (
                         <>
                             <input type="datetime-local" className="admin-datetime-input" aria-label="汇总开始时间" value={toLocalInput(userFrom)} onChange={(event) => changeSummaryBoundary("userFrom", fromLocalInput(event.target.value))} />

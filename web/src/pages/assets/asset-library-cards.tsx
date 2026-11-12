@@ -214,10 +214,7 @@ export function AssetCover({
                 )}
                 {storageKey ? (
                     <span
-                        className={cn(
-                            "assets-cover-badge !font-medium",
-                            storageLoc === "oss" ? "!bg-sky-500/85 !text-white" : storageLoc === "server" ? "!bg-emerald-600/85 !text-white" : "!bg-amber-600/85 !text-white",
-                        )}
+                        className={cn("assets-cover-badge !font-medium", storageLoc === "oss" ? "!bg-sky-500/85 !text-white" : storageLoc === "server" ? "!bg-emerald-600/85 !text-white" : "!bg-amber-600/85 !text-white")}
                         title={resourceStorageTitle(storageKey)}
                     >
                         {resourceStorageLabel(storageKey)}

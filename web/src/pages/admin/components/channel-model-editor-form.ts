@@ -92,8 +92,9 @@ export function duplicateChannelModelValues(item: ChannelModel, protocols: Model
 export function changeChannelModelCapability(values: ChannelModelFormValues, protocols: ModelProtocolDefinition[]): ChannelModelFormValues {
     const capability = values.capability;
     const protocol = protocols.find((p) => p.value === values.protocol && p.capability === capability && p.enabled !== false)?.value || protocols.find((p) => p.capability === capability && p.enabled !== false)?.value;
+    // audio 不携带能力配置（上游语义，且有断言）；其余能力切换时保留管理员设的通用优先级。
     const priority = modelPriorityOf(values.capabilityConfig);
-    const capabilityConfig = capability === "audio" ? { version: 1, priority } : { ...defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()), priority };
+    const capabilityConfig = capability === "audio" ? undefined : { ...defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()), priority };
     if (capabilityConfig?.image && protocols.find((p) => p.value === protocol)?.imageParameters) {
         capabilityConfig.image.parameters = [];
         if (!capabilityConfig.image.resolution.supported || !protocols.find((p) => p.value === protocol)?.imageParameters?.some((p) => p.name === "size" && p.encoding === "pixels" && !p.values?.length)) capabilityConfig.image.size.presets = undefined;
@@ -126,11 +127,7 @@ export function changeChannelModelProtocol(values: ChannelModelFormValues, proto
     const next: ChannelModelFormValues = {
         ...values,
         protocol,
-        capabilityConfig:
-            values.capabilityConfig ||
-            (values.capability === "audio"
-                ? { version: 1, priority }
-                : { ...defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()), priority }),
+        capabilityConfig: values.capabilityConfig || (values.capability === "audio" ? undefined : { ...defaultModelCapabilityConfig(protocol, values.providerModelKey?.trim() || values.modelKey.trim()), priority }),
     };
     if (next.capabilityConfig && next.capabilityConfig.priority === undefined) {
         next.capabilityConfig = { ...next.capabilityConfig, priority };

@@ -15,36 +15,24 @@ function materialAnalysisLabel(status?: string): string {
     return "待分析";
 }
 
-function MaterialThumbnail({
-    material,
-    index,
-    asset,
-    disabled,
-    onOpen,
-    onDelete,
-}: {
-    material: BatchVideoMaterialInput;
-    index: number;
-    asset?: BatchVideoReferenceAsset;
-    disabled: boolean;
-    onOpen: () => void;
-    onDelete?: () => void;
-}) {
+function MaterialThumbnail({ material, index, asset, disabled, onOpen, onDelete }: { material: BatchVideoMaterialInput; index: number; asset?: BatchVideoReferenceAsset; disabled: boolean; onOpen: () => void; onDelete?: () => void }) {
     const status = asset?.analysisStatus || "pending";
     const running = status === "running" || status === "queued";
     return (
         <div
-            className={cn(
-                "group relative aspect-square overflow-hidden rounded-md border bg-surface-active/40",
-                running ? "border-primary ring-2 ring-primary/25" : status === "failed" ? "border-rose-500/60" : "border-border/60",
-            )}
+            className={cn("group relative aspect-square overflow-hidden rounded-md border bg-surface-active/40", running ? "border-primary ring-2 ring-primary/25" : status === "failed" ? "border-rose-500/60" : "border-border/60")}
             title={`${index + 1}. ${material.title || "未命名素材"} · ${materialAnalysisLabel(status)}`}
         >
             <button type="button" className="block h-full w-full" onClick={onOpen}>
                 <img src={resourceFileUrl(material.resourceId)} alt={material.title || "素材"} className={cn("h-full w-full object-cover", status === "pending" ? "opacity-55" : "")} loading="lazy" />
             </button>
             <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/55 px-1 text-[9px] tabular-nums text-white">{index + 1}</span>
-            <span className={cn("pointer-events-none absolute bottom-1 right-1 grid size-4 place-items-center rounded-full text-white", status === "succeeded" ? "bg-emerald-600" : status === "failed" ? "bg-rose-600" : running ? "bg-black/55" : "bg-black/30")}>
+            <span
+                className={cn(
+                    "pointer-events-none absolute bottom-1 right-1 grid size-4 place-items-center rounded-full text-white",
+                    status === "succeeded" ? "bg-emerald-600" : status === "failed" ? "bg-rose-600" : running ? "bg-black/55" : "bg-black/30",
+                )}
+            >
                 {status === "succeeded" ? <Check className="size-2.5" /> : status === "failed" ? <AlertCircle className="size-2.5" /> : running ? <Loader2 className="size-2.5 animate-spin" /> : null}
             </span>
             {onDelete ? (
@@ -100,17 +88,11 @@ export function MaterialsPanel({
                         <Layers className="size-4 text-foreground/45" />
                         <span className="text-sm font-medium">{batch.label || `批次 ${batch.batchNo}`}</span>
                         <Tag bordered={false}>{batch.status === "ready" ? "已入库" : "草稿"}</Tag>
-                        <span className="text-[11px] text-foreground/40">{batch.materials.length} 图 · {batch.documents.length} 文档</span>
+                        <span className="text-[11px] text-foreground/40">
+                            {batch.materials.length} 图 · {batch.documents.length} 文档
+                        </span>
                         {onDeleteBatch ? (
-                            <Button
-                                className="ml-auto"
-                                size="small"
-                                type="text"
-                                danger
-                                icon={<Trash2 className="size-3.5" />}
-                                loading={actionLoading === `delete-batch-${batch.id}`}
-                                onClick={() => onDeleteBatch(batch.id, batch.label)}
-                            >
+                            <Button className="ml-auto" size="small" type="text" danger icon={<Trash2 className="size-3.5" />} loading={actionLoading === `delete-batch-${batch.id}`} onClick={() => onDeleteBatch(batch.id, batch.label)}>
                                 删除批次
                             </Button>
                         ) : null}
@@ -151,7 +133,9 @@ export function MaterialsPanel({
 
             <section className="rounded-xl border border-border/70 bg-surface p-4">
                 <div className="flex items-center justify-between">
-                    <h2 className="flex items-center gap-2 text-sm font-semibold"><ImageIcon className="size-4" /> 参考图库</h2>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold">
+                        <ImageIcon className="size-4" /> 参考图库
+                    </h2>
                     <span className="text-[11px] text-foreground/45">{detail.referenceAssets.length} 张 · 全项目共享</span>
                 </div>
                 <p className="mt-1 text-xs text-foreground/45">创意只引用这里的一张图；描述与标签由分析模型补全。</p>
@@ -165,14 +149,25 @@ export function MaterialsPanel({
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
                                         <h3 className="truncate text-xs font-semibold">{asset.title || "参考图"}</h3>
-                                        <Tag bordered={false} color={asset.status === "approved" ? "success" : asset.status === "failed" ? "error" : asset.status === "generating" ? "processing" : "default"} className="shrink-0" icon={asset.status === "generating" ? <Loader2 className="size-3 animate-spin" /> : undefined}>
+                                        <Tag
+                                            bordered={false}
+                                            color={asset.status === "approved" ? "success" : asset.status === "failed" ? "error" : asset.status === "generating" ? "processing" : "default"}
+                                            className="shrink-0"
+                                            icon={asset.status === "generating" ? <Loader2 className="size-3 animate-spin" /> : undefined}
+                                        >
                                             {asset.status === "approved" ? "可用" : asset.status === "failed" ? "生成失败" : asset.status === "generating" ? "生成中" : asset.status}
                                         </Tag>
                                     </div>
                                     {asset.status === "generating" ? <Progress className="!mb-0 !mt-1" percent={100} showInfo={false} status="active" size="small" /> : null}
                                     <p className="mt-1 line-clamp-3 text-[11px] leading-4 text-foreground/55">{asset.description || (asset.status === "generating" ? "正在生成参考图，完成后自动回填描述。" : "等待分析模型补充描述")}</p>
                                     <div className="mt-1.5 flex flex-wrap gap-1">
-                                        {parseTags(asset.tagsJson).slice(0, 4).map((tag) => <Tag key={tag} bordered={false} className="!text-[10px]">{tag}</Tag>)}
+                                        {parseTags(asset.tagsJson)
+                                            .slice(0, 4)
+                                            .map((tag) => (
+                                                <Tag key={tag} bordered={false} className="!text-[10px]">
+                                                    {tag}
+                                                </Tag>
+                                            ))}
                                     </div>
                                 </div>
                             </article>
@@ -187,7 +182,13 @@ export function MaterialsPanel({
                     <span className="text-[11px] text-foreground/45">{detail.sellingPoints.length} 条</span>
                 </div>
                 {detail.sellingPoints.length === 0 ? (
-                    <p className="mt-3 text-xs text-foreground/45">{detail.project.analysisStatus === "queued" || detail.project.analysisStatus === "running" ? "分析中，完成后自动生成卖点。" : detail.project.analysisStatus === "awaiting_decision" ? "有图片分析失败，请在进度窗确认继续或中止。" : "暂无卖点，上传素材后会自动分析生成。"}</p>
+                    <p className="mt-3 text-xs text-foreground/45">
+                        {detail.project.analysisStatus === "queued" || detail.project.analysisStatus === "running"
+                            ? "分析中，完成后自动生成卖点。"
+                            : detail.project.analysisStatus === "awaiting_decision"
+                              ? "有图片分析失败，请在进度窗确认继续或中止。"
+                              : "暂无卖点，上传素材后会自动分析生成。"}
+                    </p>
                 ) : (
                     <ol className="mt-3 grid gap-2 sm:grid-cols-2">
                         {detail.sellingPoints.map((point, index) => (
@@ -230,7 +231,19 @@ export function MaterialsPanel({
                         <img src={resourceFileUrl(preview.material.resourceId)} alt={preview.material.title || "素材"} className="max-h-[60vh] w-full rounded-lg bg-surface-active/40 object-contain" />
                         <div className="space-y-3 text-xs">
                             <div className="flex flex-wrap items-center gap-1.5">
-                                <Tag bordered={false} color={preview.asset?.analysisStatus === "succeeded" ? "success" : preview.asset?.analysisStatus === "failed" ? "error" : preview.asset?.analysisStatus === "running" || preview.asset?.analysisStatus === "queued" ? "processing" : "default"} icon={preview.asset?.analysisStatus === "running" || preview.asset?.analysisStatus === "queued" ? <Loader2 className="size-3 animate-spin" /> : undefined}>
+                                <Tag
+                                    bordered={false}
+                                    color={
+                                        preview.asset?.analysisStatus === "succeeded"
+                                            ? "success"
+                                            : preview.asset?.analysisStatus === "failed"
+                                              ? "error"
+                                              : preview.asset?.analysisStatus === "running" || preview.asset?.analysisStatus === "queued"
+                                                ? "processing"
+                                                : "default"
+                                    }
+                                    icon={preview.asset?.analysisStatus === "running" || preview.asset?.analysisStatus === "queued" ? <Loader2 className="size-3 animate-spin" /> : undefined}
+                                >
                                     {materialAnalysisLabel(preview.asset?.analysisStatus)}
                                 </Tag>
                                 {preview.asset?.analyzedAt ? <span className="text-[11px] text-foreground/40">{new Date(preview.asset.analyzedAt).toLocaleString("zh-CN")}</span> : null}
@@ -244,7 +257,11 @@ export function MaterialsPanel({
                                 <div>
                                     <div className="text-[11px] font-medium text-foreground/45">标签</div>
                                     <div className="mt-1 flex flex-wrap gap-1">
-                                        {parseTags(preview.asset?.tagsJson || "").map((tag) => <Tag key={tag} bordered={false} className="!text-[10px]">{tag}</Tag>)}
+                                        {parseTags(preview.asset?.tagsJson || "").map((tag) => (
+                                            <Tag key={tag} bordered={false} className="!text-[10px]">
+                                                {tag}
+                                            </Tag>
+                                        ))}
                                     </div>
                                 </div>
                             ) : null}

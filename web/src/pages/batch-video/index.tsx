@@ -135,24 +135,24 @@ export default function BatchVideoListPage() {
                                     {items.map((item) => {
                                         const { project, counts, settings, validation } = item;
                                         return (
-                                            <tr
-                                                key={project.id}
-                                                className="cursor-pointer border-t border-border/60 transition-colors hover:bg-surface-active/40"
-                                                onClick={() => navigate(`/batch-video/${project.id}`)}
-                                            >
+                                            <tr key={project.id} className="cursor-pointer border-t border-border/60 transition-colors hover:bg-surface-active/40" onClick={() => navigate(`/batch-video/${project.id}`)}>
                                                 <td className="max-w-[260px] px-4 py-3">
                                                     <div className="truncate text-sm font-medium text-foreground">{project.name}</div>
                                                     <div className="mt-0.5 truncate text-[11px] text-foreground/50">{project.productName || "未填写产品名称"}</div>
                                                 </td>
                                                 <td className="px-3 py-3">
-                                                    <Tag color={stageTone(project.stage)} bordered={false}>{batchVideoStageLabel(project.stage)}</Tag>
+                                                    <Tag color={stageTone(project.stage)} bordered={false}>
+                                                        {batchVideoStageLabel(project.stage)}
+                                                    </Tag>
                                                 </td>
                                                 <td className="px-3 py-3 text-right tabular-nums">{counts.creativeTotal}</td>
                                                 <td className="px-3 py-3 text-right tabular-nums">{counts.approved}</td>
                                                 <td className={cn("px-3 py-3 text-right tabular-nums", counts.succeeded > 0 && "font-medium text-emerald-600 dark:text-emerald-400")}>{counts.succeeded}</td>
                                                 <td className={cn("px-3 py-3 text-right tabular-nums", counts.failed > 0 && "font-medium text-rose-600 dark:text-rose-400")}>{counts.failed}</td>
                                                 <td className="px-3 py-3 text-foreground/60">
-                                                    <div>{settings.durationSeconds}s · {settings.aspectRatio}</div>
+                                                    <div>
+                                                        {settings.durationSeconds}s · {settings.aspectRatio}
+                                                    </div>
                                                     {project.massUnlockedAt ? (
                                                         <div className="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">量产已解锁</div>
                                                     ) : validation.passed ? (
@@ -184,7 +184,16 @@ export default function BatchVideoListPage() {
                             </table>
                         </div>
                     </div>
-                    <PaginationBar current={page} pageSize={pageSize} total={total} onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }} itemLabel="个项目" />
+                    <PaginationBar
+                        current={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onChange={(nextPage, nextPageSize) => {
+                            setPage(nextPage);
+                            setPageSize(nextPageSize);
+                        }}
+                        itemLabel="个项目"
+                    />
                 </>
             )}
         </WorkspacePage>

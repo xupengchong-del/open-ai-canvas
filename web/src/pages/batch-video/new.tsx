@@ -56,11 +56,21 @@ export default function BatchVideoNewPage() {
                 <div className="mt-6 rounded-lg bg-primary/5 p-4 text-xs leading-5 text-foreground/60">
                     <div className="mb-2 text-sm font-semibold text-foreground/75">创建后按左侧流程继续</div>
                     <ul className="space-y-1.5">
-                        <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 1. 上传素材并分析：上传后自动提取卖点与参考图说明</li>
-                        <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 2. 创意策划：按卖点和参数生成创意</li>
-                        <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 3. 人工审核：审核通过后才能生成</li>
-                        <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 4. 标准验收：验证成功率与参考图</li>
-                        <li className="flex gap-2"><CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 5. 量产放量：标准验收通过后解锁</li>
+                        <li className="flex gap-2">
+                            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 1. 上传素材并分析：上传后自动提取卖点与参考图说明
+                        </li>
+                        <li className="flex gap-2">
+                            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 2. 创意策划：按卖点和参数生成创意
+                        </li>
+                        <li className="flex gap-2">
+                            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 3. 人工审核：审核通过后才能生成
+                        </li>
+                        <li className="flex gap-2">
+                            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 4. 标准验收：验证成功率与参考图
+                        </li>
+                        <li className="flex gap-2">
+                            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> 5. 量产放量：标准验收通过后解锁
+                        </li>
                     </ul>
                 </div>
 

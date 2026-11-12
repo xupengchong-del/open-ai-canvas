@@ -3,17 +3,7 @@ import { CheckCircle2, Clapperboard, Clock3, LockKeyhole, Rocket } from "lucide-
 
 import type { BatchVideoProjectDetail } from "@/services/api/batch-video";
 
-export function MassPanel({
-    detail,
-    actionLoading,
-    onGenerate,
-    onUnlock,
-}: {
-    detail: BatchVideoProjectDetail;
-    actionLoading: string;
-    onGenerate: () => void;
-    onUnlock: () => void;
-}) {
+export function MassPanel({ detail, actionLoading, onGenerate, onUnlock }: { detail: BatchVideoProjectDetail; actionLoading: string; onGenerate: () => void; onUnlock: () => void }) {
     const { project, validation, counts, settings } = detail;
     const unlocked = Boolean(project.massUnlockedAt);
     const unmet = validation.checks.filter((check) => !check.passed);
@@ -33,11 +23,7 @@ export function MassPanel({
                                 </Tag>
                             </div>
                             <p className="mt-1 text-xs leading-5 text-foreground/55">
-                                {unlocked
-                                    ? "量产已解锁，可按卖点批量生成创意并提交视频任务。"
-                                    : validation.passed
-                                      ? "标准验收已通过。确认验收结果后解锁量产，单轮最多 1000 条创意。"
-                                      : "完成标准验收后解锁量产。下方列出尚未满足的验收条件。"}
+                                {unlocked ? "量产已解锁，可按卖点批量生成创意并提交视频任务。" : validation.passed ? "标准验收已通过。确认验收结果后解锁量产，单轮最多 1000 条创意。" : "完成标准验收后解锁量产。下方列出尚未满足的验收条件。"}
                             </p>
                         </div>
                     </div>
@@ -48,7 +34,9 @@ export function MassPanel({
                                 <div key={check.key} className="flex items-center gap-2 text-xs text-foreground/55">
                                     <Clock3 className="size-3.5 shrink-0 text-foreground/35" />
                                     <span>{check.label}</span>
-                                    <span className="ml-auto tabular-nums text-foreground/35">{String(check.current)}/{String(check.required)}</span>
+                                    <span className="ml-auto tabular-nums text-foreground/35">
+                                        {String(check.current)}/{String(check.required)}
+                                    </span>
                                 </div>
                             ))}
                         </div>
@@ -90,10 +78,22 @@ export function MassPanel({
             <section className="rounded-xl border border-border/70 bg-surface p-4">
                 <h2 className="text-sm font-semibold">量产参数</h2>
                 <div className="mt-3 space-y-2 text-xs text-foreground/60">
-                    <div className="flex items-center justify-between gap-3"><span>视频时长</span><span className="tabular-nums">{settings.durationSeconds}s</span></div>
-                    <div className="flex items-center justify-between gap-3"><span>画面比例</span><span className="tabular-nums">{settings.aspectRatio}</span></div>
-                    <div className="flex items-center justify-between gap-3"><span>标准轮创意数量</span><span className="tabular-nums">{settings.standardCreativeCount} 条</span></div>
-                    <div className="flex items-center justify-between gap-3"><span>量产状态</span><span>{unlocked ? "已解锁，单轮最多 1000 条" : "未解锁，单轮最多 20 条"}</span></div>
+                    <div className="flex items-center justify-between gap-3">
+                        <span>视频时长</span>
+                        <span className="tabular-nums">{settings.durationSeconds}s</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                        <span>画面比例</span>
+                        <span className="tabular-nums">{settings.aspectRatio}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                        <span>标准轮创意数量</span>
+                        <span className="tabular-nums">{settings.standardCreativeCount} 条</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                        <span>量产状态</span>
+                        <span>{unlocked ? "已解锁，单轮最多 1000 条" : "未解锁，单轮最多 20 条"}</span>
+                    </div>
                 </div>
                 <p className="mt-3 border-t border-border/60 pt-3 text-[11px] leading-5 text-foreground/40">量产仍受模型、预算和服务端队列约束；生成任务可在“标准验收”步骤查看进度。</p>
             </section>

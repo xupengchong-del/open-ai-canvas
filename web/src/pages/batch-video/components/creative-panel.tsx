@@ -89,7 +89,11 @@ export function CreativePanel({
                 <div className="flex flex-wrap items-center gap-2">
                     <Select value={reviewFilter} onChange={(value) => onFilterChange(String(value))} options={REVIEW_OPTIONS} size="sm" />
                     <span className="text-xs text-foreground/45">{total} 条创意</span>
-                    {generatingRound ? <Tag color="processing" bordered={false} icon={<Loader2 className="size-3 animate-spin" />}>策划模型生成中</Tag> : null}
+                    {generatingRound ? (
+                        <Tag color="processing" bordered={false} icon={<Loader2 className="size-3 animate-spin" />}>
+                            策划模型生成中
+                        </Tag>
+                    ) : null}
                 </div>
                 {reviewMode ? (
                     <div className="flex flex-wrap items-center gap-2">
@@ -107,11 +111,7 @@ export function CreativePanel({
                                 {allSubmitSelected ? "取消生成全选" : "全选本页已通过"}
                             </Button>
                         </Tooltip>
-                        {submittable.length > 0 ? (
-                            <span className="text-[11px] text-foreground/40">
-                                已勾选 {submitSelected.size} 条，提交时在顶部“提交生成”选择“当前勾选”
-                            </span>
-                        ) : null}
+                        {submittable.length > 0 ? <span className="text-[11px] text-foreground/40">已勾选 {submitSelected.size} 条，提交时在顶部“提交生成”选择“当前勾选”</span> : null}
                     </div>
                 ) : (
                     <span className="text-[11px] text-foreground/40">策划完成后，到“人工审核”逐条通过或驳回创意。</span>
@@ -156,28 +156,39 @@ export function CreativePanel({
                                     <div className="flex min-w-0 flex-1 flex-col">
                                         <div className="flex items-start justify-between gap-2">
                                             <h3 className="line-clamp-2 text-sm font-semibold leading-5">{creative.title}</h3>
-                                            <Tag bordered={false} color={reviewStatusColor(creative.reviewStatus)}>{reviewStatusLabel(creative.reviewStatus)}</Tag>
+                                            <Tag bordered={false} color={reviewStatusColor(creative.reviewStatus)}>
+                                                {reviewStatusLabel(creative.reviewStatus)}
+                                            </Tag>
                                         </div>
                                         <p className="mt-1 line-clamp-2 text-xs leading-5 text-foreground/65">
-                                            <span className="font-medium text-foreground/45">钩子：</span>{creative.hook}
+                                            <span className="font-medium text-foreground/45">钩子：</span>
+                                            {creative.hook}
                                         </p>
                                         <p className="mt-1 line-clamp-3 text-xs leading-5 text-foreground/60">
-                                            <span className="font-medium text-foreground/45">文案：</span>{creative.copywriting}
+                                            <span className="font-medium text-foreground/45">文案：</span>
+                                            {creative.copywriting}
                                         </p>
                                         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-foreground/40">
-                                            <span>{creative.durationSeconds}s · {creative.aspectRatio}</span>
+                                            <span>
+                                                {creative.durationSeconds}s · {creative.aspectRatio}
+                                            </span>
                                             <span>·</span>
                                             <span>{templateLabel(creative.templateId)}</span>
                                             {creative.matchStatus === "matched" ? (
                                                 <span>· 参考图匹配 {Math.round(creative.matchScore * 100)}%</span>
                                             ) : creative.matchStatus === "generating" ? (
-                                                <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400"><Loader2 className="size-3 animate-spin" />参考图生成中</span>
+                                                <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400">
+                                                    <Loader2 className="size-3 animate-spin" />
+                                                    参考图生成中
+                                                </span>
                                             ) : (
                                                 <span className="text-amber-600 dark:text-amber-400">· 未匹配参考图</span>
                                             )}
                                         </div>
                                         <div className="mt-auto flex items-center justify-end gap-1.5 pt-2">
-                                            <Button size="small" type="text" icon={<Pencil className="size-3.5" />} onClick={() => onOpen(creative)}>详情 / 编辑</Button>
+                                            <Button size="small" type="text" icon={<Pencil className="size-3.5" />} onClick={() => onOpen(creative)}>
+                                                详情 / 编辑
+                                            </Button>
                                             {creative.matchStatus !== "matched" && creative.matchStatus !== "generating" ? (
                                                 <Button size="small" type="text" icon={<ImageOff className="size-3.5" />} loading={actionLoading === `generate-ref-${creative.id}`} onClick={() => onGenerateReference(creative)}>
                                                     生成参考图

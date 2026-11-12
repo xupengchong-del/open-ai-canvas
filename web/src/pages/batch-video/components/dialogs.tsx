@@ -4,14 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Select } from "@/components/ui/base/select";
 import { formatCredits } from "@/constant/credits";
 import { batchVideoApi, type BatchVideoSubmissionInput, type BatchVideoSubmissionPreflight } from "@/services/api/batch-video";
-import type {
-    BatchVideoAdminSettings,
-    BatchVideoDocumentInput,
-    BatchVideoMaterialInput,
-    BatchVideoModelOption,
-    BatchVideoProjectDetail,
-    BatchVideoProjectSettings,
-} from "@/services/api/batch-video";
+import type { BatchVideoAdminSettings, BatchVideoDocumentInput, BatchVideoMaterialInput, BatchVideoModelOption, BatchVideoProjectDetail, BatchVideoProjectSettings } from "@/services/api/batch-video";
 import { MaterialUploader } from "./material-uploader";
 
 const DURATION_OPTIONS = [5, 8, 10, 15].map((value) => ({ value, label: `${value} 秒` }));
@@ -23,19 +16,7 @@ const ASPECT_OPTIONS = [
     { value: "4:3", label: "4:3 横版" },
 ];
 
-export function ProjectSettingsDrawer({
-    open,
-    detail,
-    saving,
-    onClose,
-    onSave,
-}: {
-    open: boolean;
-    detail: BatchVideoProjectDetail;
-    saving: boolean;
-    onClose: () => void;
-    onSave: (settings: BatchVideoProjectSettings) => void;
-}) {
+export function ProjectSettingsDrawer({ open, detail, saving, onClose, onSave }: { open: boolean; detail: BatchVideoProjectDetail; saving: boolean; onClose: () => void; onSave: (settings: BatchVideoProjectSettings) => void }) {
     const [draft, setDraft] = useState<BatchVideoProjectSettings>(detail.settings);
     const update = (patch: Partial<BatchVideoProjectSettings>) => setDraft((current) => ({ ...current, ...patch }));
     return (
@@ -66,9 +47,7 @@ export function ProjectSettingsDrawer({
                     <InputNumber min={5} max={20} value={draft.standardCreativeCount} onChange={(value) => update({ standardCreativeCount: Number(value) || 5 })} className="w-full" />
                     <span className="text-xs text-foreground/45">标准验收可配置 5–20 条，默认 10 条。</span>
                 </label>
-                <div className="rounded-lg bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300">
-                    修改参数后，已有分析会标记为过期；需要重新分析素材后再生成创意。
-                </div>
+                <div className="rounded-lg bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300">修改参数后，已有分析会标记为过期；需要重新分析素材后再生成创意。</div>
             </div>
         </Drawer>
     );
@@ -125,12 +104,21 @@ export function PlanDialog({
                     <span>·</span>
                     <span>{detail.referenceAssets.length} 张参考图</span>
                     <span>·</span>
-                    <span>{detail.settings.durationSeconds}s / {detail.settings.aspectRatio}</span>
+                    <span>
+                        {detail.settings.durationSeconds}s / {detail.settings.aspectRatio}
+                    </span>
                 </div>
                 {massUnlocked ? (
                     <label className="grid gap-1.5 text-sm">
                         <span className="font-medium">生成模式</span>
-                        <Radio.Group value={mode} onChange={(event) => { const nextMode = event.target.value as "standard" | "mass"; setMode(nextMode); setCount((value) => Math.max(nextMode === "mass" ? 1 : 5, Math.min(nextMode === "mass" ? maxMass : maxStandard, value))); }}>
+                        <Radio.Group
+                            value={mode}
+                            onChange={(event) => {
+                                const nextMode = event.target.value as "standard" | "mass";
+                                setMode(nextMode);
+                                setCount((value) => Math.max(nextMode === "mass" ? 1 : 5, Math.min(nextMode === "mass" ? maxMass : maxStandard, value)));
+                            }}
+                        >
                             <Radio.Button value="standard">标准轮（最多 {maxStandard} 条）</Radio.Button>
                             <Radio.Button value="mass">量产（最多 {maxMass} 条）</Radio.Button>
                         </Radio.Group>
@@ -145,15 +133,9 @@ export function PlanDialog({
                 </label>
                 <div className="grid gap-2 text-sm">
                     <span className="font-medium">模板范围</span>
-                    <Checkbox.Group
-                        value={selectedTemplates}
-                        onChange={(values) => setSelectedTemplates(values.map(String))}
-                        options={templates.map((item) => ({ label: item.label, value: item.id }))}
-                    />
+                    <Checkbox.Group value={selectedTemplates} onChange={(values) => setSelectedTemplates(values.map(String))} options={templates.map((item) => ({ label: item.label, value: item.id }))} />
                 </div>
-                <div className="rounded-lg bg-primary/5 px-3 py-2 text-xs leading-5 text-foreground/60">
-                    策划任务由服务端队列执行，可关闭页面；完成后创意会出现在“创意与审核”。
-                </div>
+                <div className="rounded-lg bg-primary/5 px-3 py-2 text-xs leading-5 text-foreground/60">策划任务由服务端队列执行，可关闭页面；完成后创意会出现在“创意与审核”。</div>
             </div>
         </Modal>
     );
@@ -238,7 +220,9 @@ export function SubmitDialog({
                     <span className="font-medium">提交范围</span>
                     <Radio.Group value={scope} onChange={(event) => change(setScope, event.target.value as "all" | "selected")}>
                         <Radio.Button value="all">全部已通过（{detail.counts.approved} 条）</Radio.Button>
-                        <Radio.Button value="selected" disabled={selectedIds.length === 0}>当前勾选（{selectedIds.length} 条）</Radio.Button>
+                        <Radio.Button value="selected" disabled={selectedIds.length === 0}>
+                            当前勾选（{selectedIds.length} 条）
+                        </Radio.Button>
                     </Radio.Group>
                 </div>
                 {massUnlocked ? (
@@ -270,17 +254,21 @@ export function SubmitDialog({
                         placeholder={models.length === 0 ? "暂无可用模型" : "选择一个或多个模型"}
                         className="w-full"
                     />
-                    {models.length === 0 ? (
-                        <span className="text-xs text-amber-600 dark:text-amber-400">还没有视频模型开启批量授权。请管理员在“系统渠道 → 模型 → 能力与参数”中打开“允许用于批量视频”。</span>
-                    ) : null}
+                    {models.length === 0 ? <span className="text-xs text-amber-600 dark:text-amber-400">还没有视频模型开启批量授权。请管理员在“系统渠道 → 模型 → 能力与参数”中打开“允许用于批量视频”。</span> : null}
                 </label>
                 <div className="rounded-lg bg-surface-active/50 px-3 py-2 text-xs leading-6 text-foreground/60">
                     <div>提交后不会立即调用模型；需要在任务面板点击“开始生成”或设置定时。</div>
-                    <div>预计任务数：<span className="font-semibold text-foreground">{preflight?.jobCount ?? estimated}</span></div>
+                    <div>
+                        预计任务数：<span className="font-semibold text-foreground">{preflight?.jobCount ?? estimated}</span>
+                    </div>
                     {preflight ? (
                         <>
-                            <div>{preflight.estimated ? "预估" : "本次"}费用：<span className="font-semibold text-foreground">{formatCredits(preflight.totalMicrocredits)} 积分</span>；可用 {formatCredits(preflight.availableMicrocredits)} 积分</div>
-                            <div>本地存储：{(preflight.storedBytes / 1024 ** 3).toFixed(2)} / {(preflight.storageLimitBytes / 1024 ** 3).toFixed(2)} GB；实际耗时取决于渠道并发与单条生成耗时。</div>
+                            <div>
+                                {preflight.estimated ? "预估" : "本次"}费用：<span className="font-semibold text-foreground">{formatCredits(preflight.totalMicrocredits)} 积分</span>；可用 {formatCredits(preflight.availableMicrocredits)} 积分
+                            </div>
+                            <div>
+                                本地存储：{(preflight.storedBytes / 1024 ** 3).toFixed(2)} / {(preflight.storageLimitBytes / 1024 ** 3).toFixed(2)} GB；实际耗时取决于渠道并发与单条生成耗时。
+                            </div>
                         </>
                     ) : (
                         <div>提交前由服务端校验审核状态、模型授权、验收快照、余额和本地存储。</div>

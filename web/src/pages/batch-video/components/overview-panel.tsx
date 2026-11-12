@@ -15,8 +15,30 @@ export function ProductProfilePanel({ detail }: { detail: BatchVideoProjectDetai
             <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold">产品档案</h2>
                 <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-foreground/45">{settings.durationSeconds}s · {settings.aspectRatio}</span>
-                    {analysisAwaiting ? <Tag color="warning" bordered={false}>等待确认</Tag> : analysisRunning ? <Tag color="processing" bordered={false}>分析中</Tag> : project.analysisStatus === "failed" ? <Tag color="error" bordered={false}>分析失败</Tag> : project.analysisStatus === "cancelled" ? <Tag color="warning" bordered={false}>已中止</Tag> : project.analysisStatus === "stale" ? <Tag color="warning" bordered={false}>素材已变更</Tag> : null}
+                    <span className="text-[11px] text-foreground/45">
+                        {settings.durationSeconds}s · {settings.aspectRatio}
+                    </span>
+                    {analysisAwaiting ? (
+                        <Tag color="warning" bordered={false}>
+                            等待确认
+                        </Tag>
+                    ) : analysisRunning ? (
+                        <Tag color="processing" bordered={false}>
+                            分析中
+                        </Tag>
+                    ) : project.analysisStatus === "failed" ? (
+                        <Tag color="error" bordered={false}>
+                            分析失败
+                        </Tag>
+                    ) : project.analysisStatus === "cancelled" ? (
+                        <Tag color="warning" bordered={false}>
+                            已中止
+                        </Tag>
+                    ) : project.analysisStatus === "stale" ? (
+                        <Tag color="warning" bordered={false}>
+                            素材已变更
+                        </Tag>
+                    ) : null}
                 </div>
             </div>
             {(project.analysisStatus === "failed" || project.analysisStatus === "cancelled" || analysisAwaiting) && project.analysisError ? (
@@ -28,9 +50,7 @@ export function ProductProfilePanel({ detail }: { detail: BatchVideoProjectDetai
             {profile.productSummary ? (
                 <div className="mt-3 space-y-2">
                     <p className="text-sm leading-6 text-foreground/75">{profile.productSummary}</p>
-                    {project.analysisStatus === "stale" ? (
-                        <p className="text-xs text-amber-700 dark:text-amber-300">素材已增删，当前档案可能过期；点击页面上方“分析素材”重新生成。</p>
-                    ) : null}
+                    {project.analysisStatus === "stale" ? <p className="text-xs text-amber-700 dark:text-amber-300">素材已增删，当前档案可能过期；点击页面上方“分析素材”重新生成。</p> : null}
                 </div>
             ) : analysisRunning ? (
                 <p className="mt-3 text-xs text-foreground/45">分析任务已提交，完成后自动更新卖点与产品档案。</p>
@@ -42,7 +62,9 @@ export function ProductProfilePanel({ detail }: { detail: BatchVideoProjectDetai
             {profile.complianceNotes && profile.complianceNotes.length > 0 ? (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                     {profile.complianceNotes.map((note, index) => (
-                        <Tag key={index} color="warning" bordered={false}>{note}</Tag>
+                        <Tag key={index} color="warning" bordered={false}>
+                            {note}
+                        </Tag>
                     ))}
                 </div>
             ) : null}
@@ -56,7 +78,15 @@ export function ValidationPanel({ detail }: { detail: BatchVideoProjectDetail })
         <section className="rounded-xl border border-border/70 bg-surface p-4">
             <div className="flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold">标准验收</h2>
-                {validation.passed ? <Tag color="success" bordered={false}>验收通过</Tag> : <Tag color="processing" bordered={false}>待验收</Tag>}
+                {validation.passed ? (
+                    <Tag color="success" bordered={false}>
+                        验收通过
+                    </Tag>
+                ) : (
+                    <Tag color="processing" bordered={false}>
+                        待验收
+                    </Tag>
+                )}
             </div>
             <div className="mt-3 flex items-center gap-2 text-xs text-foreground/55">
                 <span>成功率</span>
@@ -71,7 +101,9 @@ export function ValidationPanel({ detail }: { detail: BatchVideoProjectDetail })
                         {check.passed ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /> : <Clock3 className="mt-0.5 size-3.5 shrink-0 text-foreground/35" />}
                         <span className={check.passed ? "text-foreground/70" : "text-foreground/45"}>{check.label}</span>
                         <Tooltip title={`当前 ${String(check.current)} / 要求 ${String(check.required)}`}>
-                            <span className="ml-auto shrink-0 tabular-nums text-foreground/40">{String(check.current)}/{String(check.required)}</span>
+                            <span className="ml-auto shrink-0 tabular-nums text-foreground/40">
+                                {String(check.current)}/{String(check.required)}
+                            </span>
                         </Tooltip>
                     </div>
                 ))}

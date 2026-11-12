@@ -29,23 +29,7 @@ function formatElapsed(startedAt: string | null | undefined, now: number): strin
     return `${minutes} 分 ${seconds % 60} 秒`;
 }
 
-export function TaskProgressDialog({
-    open,
-    title,
-    description,
-    state,
-    aborting,
-    onAbort,
-    onClose,
-}: {
-    open: boolean;
-    title: string;
-    description: string;
-    state: TaskProgressState;
-    aborting?: boolean;
-    onAbort?: () => void;
-    onClose: () => void;
-}) {
+export function TaskProgressDialog({ open, title, description, state, aborting, onAbort, onClose }: { open: boolean; title: string; description: string; state: TaskProgressState; aborting?: boolean; onAbort?: () => void; onClose: () => void }) {
     const [now, setNow] = useState(Date.now());
     useEffect(() => {
         if (!open) return;

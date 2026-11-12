@@ -107,9 +107,7 @@ export function AnalysisProgressDialog({
                         }
                     />
                 ) : (
-                    <p className="text-xs leading-5 text-foreground/55">
-                        图片按后台设置的并行数同时调用视觉模型，单张结果独立保存。分析完成前窗口保持打开，可随时中止；中止后素材和已完成结果会保留。
-                    </p>
+                    <p className="text-xs leading-5 text-foreground/55">图片按后台设置的并行数同时调用视觉模型，单张结果独立保存。分析完成前窗口保持打开，可随时中止；中止后素材和已完成结果会保留。</p>
                 )}
                 <div>
                     <div className="flex items-center justify-between text-xs text-foreground/55">
@@ -126,7 +124,9 @@ export function AnalysisProgressDialog({
                     </div>
                     <Progress className="!mb-0 !mt-1" percent={percent} status={failed > 0 ? "exception" : "active"} />
                     <div className="mt-1 flex items-center justify-between text-[11px] text-foreground/40">
-                        <span>已完成 {done}/{total} 张{failed > 0 ? ` · 失败 ${failed} 张` : ""}</span>
+                        <span>
+                            已完成 {done}/{total} 张{failed > 0 ? ` · 失败 ${failed} 张` : ""}
+                        </span>
                         <span>每张结果会写入参考图描述和卖点</span>
                     </div>
                 </div>
@@ -146,7 +146,12 @@ export function AnalysisProgressDialog({
                                 >
                                     <img src={resourceFileUrl(asset.resourceId)} alt={asset.title || "素材"} className={cn("h-full w-full object-cover", status === "pending" ? "opacity-45" : "")} loading="lazy" />
                                     <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[9px] tabular-nums text-white">{index + 1}</span>
-                                    <span className={cn("absolute bottom-1 right-1 grid size-4 place-items-center rounded-full text-white", status === "succeeded" ? "bg-emerald-600" : status === "failed" ? "bg-rose-600" : running ? "bg-black/55" : "bg-black/35")}>
+                                    <span
+                                        className={cn(
+                                            "absolute bottom-1 right-1 grid size-4 place-items-center rounded-full text-white",
+                                            status === "succeeded" ? "bg-emerald-600" : status === "failed" ? "bg-rose-600" : running ? "bg-black/55" : "bg-black/35",
+                                        )}
+                                    >
                                         {status === "succeeded" ? <Check className="size-2.5" /> : status === "failed" ? <AlertCircle className="size-2.5" /> : running ? <Loader2 className="size-2.5 animate-spin" /> : null}
                                     </span>
                                 </div>

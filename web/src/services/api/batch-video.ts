@@ -301,14 +301,10 @@ export const batchVideoApi = {
     getProject: (id: string) => http.get<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}`),
     deleteProject: (id: string) => http.delete<{ deleted: boolean }>(`/batch-video/projects/${encodeURIComponent(id)}`),
     updateSettings: (id: string, settings: BatchVideoProjectSettings) => http.patch<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/settings`, settings),
-    addMaterialBatch: (id: string, payload: { label: string; materials: BatchVideoMaterialInput[]; documents: BatchVideoDocumentInput[] }) =>
-        http.post<BatchVideoMaterialBatch>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches`, payload),
-    deleteMaterialBatch: (id: string, batchId: string) =>
-        http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches/${encodeURIComponent(batchId)}`),
-    deleteMaterial: (id: string, batchId: string, resourceId: string) =>
-        http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches/${encodeURIComponent(batchId)}/materials/${encodeURIComponent(resourceId)}`),
-    clearMaterials: (id: string) =>
-        http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches`),
+    addMaterialBatch: (id: string, payload: { label: string; materials: BatchVideoMaterialInput[]; documents: BatchVideoDocumentInput[] }) => http.post<BatchVideoMaterialBatch>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches`, payload),
+    deleteMaterialBatch: (id: string, batchId: string) => http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches/${encodeURIComponent(batchId)}`),
+    deleteMaterial: (id: string, batchId: string, resourceId: string) => http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches/${encodeURIComponent(batchId)}/materials/${encodeURIComponent(resourceId)}`),
+    clearMaterials: (id: string) => http.delete<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/material-batches`),
     analyze: (id: string, scope: "pending" | "all" = "pending") => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/analyze`, { scope }),
     continueAnalysis: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/analysis/continue`, {}),
     cancelAnalysis: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/analysis/cancel`, {}),
@@ -319,29 +315,19 @@ export const batchVideoApi = {
         http.get<{ creatives: BatchVideoCreative[]; total: number }>(`/batch-video/projects/${encodeURIComponent(id)}/creatives`, { params }),
     updateCreative: (id: string, creativeId: string, payload: Pick<BatchVideoCreative, "title" | "hook" | "copywriting" | "videoPrompt" | "imagePrompt">) =>
         http.patch<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}`, payload),
-    rematchCreative: (id: string, creativeId: string) =>
-        http.post<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}/rematch`, {}),
-    reviewCreative: (id: string, creativeId: string, status: "approved" | "rejected", note = "") =>
-        http.post<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}/review`, { status, note }),
-    reviewCreatives: (id: string, ids: string[], status: "approved" | "rejected", note = "") =>
-        http.post<{ updated: number }>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/review-batch`, { ids, status, note }),
+    rematchCreative: (id: string, creativeId: string) => http.post<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}/rematch`, {}),
+    reviewCreative: (id: string, creativeId: string, status: "approved" | "rejected", note = "") => http.post<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}/review`, { status, note }),
+    reviewCreatives: (id: string, ids: string[], status: "approved" | "rejected", note = "") => http.post<{ updated: number }>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/review-batch`, { ids, status, note }),
     listReferenceAssets: (id: string) => http.get<BatchVideoReferenceAsset[]>(`/batch-video/projects/${encodeURIComponent(id)}/reference-assets`),
-    addReferenceAssets: (id: string, assets: { resourceId: string; title: string; description: string; tags: string[] }[]) =>
-        http.post<BatchVideoReferenceAsset[]>(`/batch-video/projects/${encodeURIComponent(id)}/reference-assets`, { assets }),
+    addReferenceAssets: (id: string, assets: { resourceId: string; title: string; description: string; tags: string[] }[]) => http.post<BatchVideoReferenceAsset[]>(`/batch-video/projects/${encodeURIComponent(id)}/reference-assets`, { assets }),
     validation: (id: string) => http.get<BatchVideoValidationState>(`/batch-video/projects/${encodeURIComponent(id)}/validation`),
     unlockMass: (id: string) => http.post<BatchVideoProjectDetail>(`/batch-video/projects/${encodeURIComponent(id)}/unlock-mass`, {}),
-    preflight: (id: string, payload: BatchVideoSubmissionInput) =>
-        http.post<BatchVideoSubmissionPreflight>(`/batch-video/projects/${encodeURIComponent(id)}/preflight`, payload),
-    discardUploads: (resourceIds: string[]) =>
-        http.post<{ discarded: number }>("/batch-video/uploads/discard", { resourceIds }),
-    submit: (id: string, payload: BatchVideoSubmissionInput) =>
-        http.post<{ jobs: number }>(`/batch-video/projects/${encodeURIComponent(id)}/submit`, payload),
-    start: (id: string, scheduledAt?: string) =>
-        http.post<{ jobs: number }>(`/batch-video/projects/${encodeURIComponent(id)}/start`, scheduledAt ? { scheduledAt } : {}),
-    listJobs: (id: string, params: { page?: number; pageSize?: number; status?: string } = {}) =>
-        http.get<BatchVideoGenerationJob[]>(`/batch-video/projects/${encodeURIComponent(id)}/jobs`, { params }),
-    listAttempts: (id: string, jobId: string) =>
-        http.get<BatchVideoAttempt[]>(`/batch-video/projects/${encodeURIComponent(id)}/jobs/${encodeURIComponent(jobId)}/attempts`),
+    preflight: (id: string, payload: BatchVideoSubmissionInput) => http.post<BatchVideoSubmissionPreflight>(`/batch-video/projects/${encodeURIComponent(id)}/preflight`, payload),
+    discardUploads: (resourceIds: string[]) => http.post<{ discarded: number }>("/batch-video/uploads/discard", { resourceIds }),
+    submit: (id: string, payload: BatchVideoSubmissionInput) => http.post<{ jobs: number }>(`/batch-video/projects/${encodeURIComponent(id)}/submit`, payload),
+    start: (id: string, scheduledAt?: string) => http.post<{ jobs: number }>(`/batch-video/projects/${encodeURIComponent(id)}/start`, scheduledAt ? { scheduledAt } : {}),
+    listJobs: (id: string, params: { page?: number; pageSize?: number; status?: string } = {}) => http.get<BatchVideoGenerationJob[]>(`/batch-video/projects/${encodeURIComponent(id)}/jobs`, { params }),
+    listAttempts: (id: string, jobId: string) => http.get<BatchVideoAttempt[]>(`/batch-video/projects/${encodeURIComponent(id)}/jobs/${encodeURIComponent(jobId)}/attempts`),
     retryJob: (id: string, jobId: string) => http.post<BatchVideoGenerationJob>(`/batch-video/projects/${encodeURIComponent(id)}/jobs/${encodeURIComponent(jobId)}/retry`, {}),
     cancelPending: (id: string) => http.post<{ cancelled: number }>(`/batch-video/projects/${encodeURIComponent(id)}/cancel-pending`, {}),
     retryFailed: (id: string) => http.post<{ retried: number }>(`/batch-video/projects/${encodeURIComponent(id)}/retry-failed`, {}),
@@ -350,8 +336,7 @@ export const batchVideoApi = {
     stats: (id: string) => http.get<BatchVideoProjectCounts>(`/batch-video/projects/${encodeURIComponent(id)}/stats`),
     settings: () => http.get<BatchVideoAdminSettings>("/batch-video/settings"),
     listModels: () => http.get<BatchVideoModelOption[]>("/batch-video/models"),
-    generateReference: (id: string, creativeId: string) =>
-        http.post<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}/generate-reference`, {}),
+    generateReference: (id: string, creativeId: string) => http.post<BatchVideoCreative>(`/batch-video/projects/${encodeURIComponent(id)}/creatives/${encodeURIComponent(creativeId)}/generate-reference`, {}),
     adminSettings: () => http.get<BatchVideoAdminSettings>("/admin/batch-video/settings"),
     updateAdminSettings: (settings: BatchVideoAdminSettings) => http.put<BatchVideoAdminSettings>("/admin/batch-video/settings", settings),
 };
