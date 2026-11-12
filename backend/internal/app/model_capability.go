@@ -16,10 +16,10 @@ type ModelCapabilityConfig struct {
 	MediaTransport *ReferenceMediaTransport `json:"mediaTransport,omitempty"`
 	Version        int                      `json:"version"`
 	// Priority 是所有能力的通用调用优先级：数值越大越优先，自动选择与批量调度按它降序。
-	Priority       int                      `json:"priority"`
-	Text           *TextCapabilityConfig    `json:"text,omitempty"`
-	Image          *ImageCapabilityConfig   `json:"image,omitempty"`
-	Video          *VideoCapabilityConfig   `json:"video,omitempty"`
+	Priority int                    `json:"priority"`
+	Text     *TextCapabilityConfig  `json:"text,omitempty"`
+	Image    *ImageCapabilityConfig `json:"image,omitempty"`
+	Video    *VideoCapabilityConfig `json:"video,omitempty"`
 }
 
 const (

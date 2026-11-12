@@ -82,8 +82,8 @@ type ChannelModel struct {
 	PriceTiers   []ChannelModelPriceTier `json:"priceTiers" gorm:"-"`
 	Availability any                     `json:"availability,omitempty" gorm:"-"`
 	CreatedAt    time.Time               `json:"createdAt"`
-	UpdatedAt  time.Time               `json:"updatedAt"`
-	DeletedAt  gorm.DeletedAt          `json:"-" gorm:"index"`
+	UpdatedAt    time.Time               `json:"updatedAt"`
+	DeletedAt    gorm.DeletedAt          `json:"-" gorm:"index"`
 }
 
 // ChannelModelPriceTier 表示渠道模型在一个规格组合下的可执行上游 SKU 和用户价格。

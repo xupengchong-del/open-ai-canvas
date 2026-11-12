@@ -1,10 +1,10 @@
 package database
 
 import (
-	"strconv"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"strings"
 	"time"
@@ -1305,9 +1305,8 @@ func migrateSchemaV56(tx *gorm.DB) error {
 	return nil
 }
 
-
 // localExtensionMigrationNames 是本机扩展迁移的名称，顺序对应 90001..90008。
-// 合并上游 v1.8.3 后，v61-v92 让位给官方迁移，本机 8 个迁移后移到 v93-v100。
+// 该号段独立于官方迁移号段，官方升级不再影响本机编号。
 var localExtensionMigrationNames = []string{
 	channelModelUpstreamPriceNoteMigrationName,
 	"batch_video_production",
@@ -1603,7 +1602,6 @@ func migrateDramaSegmentRevision(tx *gorm.DB) error {
 	return tx.Model(&model.DramaJob{}).Where("status IN ?", []string{"queued", "running"}).Updates(map[string]any{"status": "canceled", "error": "任务合同升级，原任务保留，需人工核对", "finished_at": time.Now()}).Error
 
 }
-
 
 // ---- 本地扩展迁移函数（batch_video / generated_asset）----
 

@@ -43,23 +43,23 @@ func supportedOSSProvider(provider string) bool {
 }
 
 type OSSSettingRequest struct {
-	Enabled           bool   `json:"enabled"`
-	Provider          string `json:"provider"`
-	Region            string `json:"region"`
-	Endpoint          string `json:"endpoint"`
-	CDNBaseURL        string `json:"cdnBaseUrl"`
-	Bucket            string `json:"bucket"`
-	AccessKeyID       string `json:"accessKeyId"`
-	AccessKeySecret   string `json:"accessKeySecret"`
-	PublicBaseURL     string `json:"publicBaseUrl"`
-	PathPrefix        string `json:"pathPrefix"`
-	S3Preset          string `json:"s3Preset"`
-	PathStyle         bool   `json:"pathStyle"`
-	SessionToken      string `json:"sessionToken"`
-	AllowUserS3       bool   `json:"allowUserS3"`
-	CDNAuthMode       string `json:"cdnAuthMode"`
-	RequireCDN        bool   `json:"requireCDN"`
-	AllowPrivateProxy bool   `json:"allowPrivateProxy"`
+	Enabled            bool   `json:"enabled"`
+	Provider           string `json:"provider"`
+	Region             string `json:"region"`
+	Endpoint           string `json:"endpoint"`
+	CDNBaseURL         string `json:"cdnBaseUrl"`
+	Bucket             string `json:"bucket"`
+	AccessKeyID        string `json:"accessKeyId"`
+	AccessKeySecret    string `json:"accessKeySecret"`
+	PublicBaseURL      string `json:"publicBaseUrl"`
+	PathPrefix         string `json:"pathPrefix"`
+	S3Preset           string `json:"s3Preset"`
+	PathStyle          bool   `json:"pathStyle"`
+	SessionToken       string `json:"sessionToken"`
+	AllowUserS3        bool   `json:"allowUserS3"`
+	CDNAuthMode        string `json:"cdnAuthMode"`
+	RequireCDN         bool   `json:"requireCDN"`
+	AllowPrivateProxy  bool   `json:"allowPrivateProxy"`
 	VideoStorageTarget string `json:"videoStorageTarget"`
 }
 
@@ -589,18 +589,18 @@ func isTaskSecretField(key string) bool {
 
 func ossSettingFromRequest(req OSSSettingRequest, current ossSettingValue) (ossSettingValue, error) {
 	next := normalizeOSSSetting(ossSettingValue{
-		Enabled:         req.Enabled,
-		Provider:        strings.TrimSpace(req.Provider),
-		Region:          strings.TrimSpace(req.Region),
-		Endpoint:        strings.TrimRight(strings.TrimSpace(req.Endpoint), "/"),
-		CDNBaseURL:      strings.TrimRight(strings.TrimSpace(req.CDNBaseURL), "/"),
-		Bucket:          strings.TrimSpace(req.Bucket),
-		AccessKeyID:     strings.TrimSpace(req.AccessKeyID),
-		AccessKeySecret: strings.TrimSpace(req.AccessKeySecret),
-		PublicBaseURL:   strings.TrimRight(strings.TrimSpace(req.PublicBaseURL), "/"),
-		PathPrefix:      strings.Trim(strings.TrimSpace(req.PathPrefix), "/"),
-		S3Preset:        strings.TrimSpace(req.S3Preset),
-		PathStyle:       req.PathStyle,
+		Enabled:            req.Enabled,
+		Provider:           strings.TrimSpace(req.Provider),
+		Region:             strings.TrimSpace(req.Region),
+		Endpoint:           strings.TrimRight(strings.TrimSpace(req.Endpoint), "/"),
+		CDNBaseURL:         strings.TrimRight(strings.TrimSpace(req.CDNBaseURL), "/"),
+		Bucket:             strings.TrimSpace(req.Bucket),
+		AccessKeyID:        strings.TrimSpace(req.AccessKeyID),
+		AccessKeySecret:    strings.TrimSpace(req.AccessKeySecret),
+		PublicBaseURL:      strings.TrimRight(strings.TrimSpace(req.PublicBaseURL), "/"),
+		PathPrefix:         strings.Trim(strings.TrimSpace(req.PathPrefix), "/"),
+		S3Preset:           strings.TrimSpace(req.S3Preset),
+		PathStyle:          req.PathStyle,
 		SessionToken:       strings.TrimSpace(req.SessionToken),
 		AllowUserS3:        req.AllowUserS3,
 		VideoStorageTarget: req.VideoStorageTarget,

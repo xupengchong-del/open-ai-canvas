@@ -1,9 +1,9 @@
 package database
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
-	"os"
 	"strings"
 	"testing"
 	"time"

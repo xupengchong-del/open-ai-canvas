@@ -64,8 +64,8 @@ func TestSaveAdminChannelModelPersistsAudioPriority(t *testing.T) {
 	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, "", ChannelModelRequest{
 		ModelKey: "speech", Capability: "audio", Protocol: string(model.ChannelInterfaceOpenAIAudio),
 		CapabilityConfig: &ModelCapabilityConfig{Version: 1, Priority: 88},
-		PriceTiers:     []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", PriceConfigured: true, Enabled: &enabled}},
-		Enabled:        &enabled,
+		PriceTiers:       []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", PriceConfigured: true, Enabled: &enabled}},
+		Enabled:          &enabled,
 	})
 	if err != nil {
 		t.Fatal(err)
