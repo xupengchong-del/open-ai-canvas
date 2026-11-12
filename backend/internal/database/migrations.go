@@ -15,7 +15,12 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 109
+// 本机扩展迁移使用独立高位号段，永远不与官方迁移号段冲突。
+// 官方 v1..vN 无论增长到多少（当前 101），都不会碰到 localExtensionMigrationBase。
+// 因此合并上游时本机迁移编号、CurrentSchemaVersion、归一化逻辑都不需要再改。
+const localExtensionMigrationBase int64 = 90000
+const localExtensionMigrationCount int64 = 8
+const CurrentSchemaVersion int64 = localExtensionMigrationBase + localExtensionMigrationCount
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -358,23 +363,24 @@ var schemaMigrations = []migration{
 	{version: 101, name: "creation_conversation_history", checksum: "sha256:creation-conversation-history-v101", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.CreationConversation{}, &model.CreationConversationMessage{}, &model.CreationConversationResource{})
 	}},
-	// ---- 本地扩展迁移（v102-v109）----
-	// 合并上游 v1.8.5 后，官方占用 v93-v101，本机 8 个迁移再次后移到 v102-v109。
-	// checksum 保持本机原值：normalizeLocalExtensionMigrations 只搬版本号，不碰校验和。
-	{version: 102, name: channelModelUpstreamPriceNoteMigrationName, checksum: channelModelUpstreamPriceNoteChecksum, apply: migrateChannelModelUpstreamPriceNote},
-	{version: 103, name: "batch_video_production", checksum: batchVideoProductionChecksum, apply: migrateBatchVideoProduction},
-	{version: 104, name: "batch_video_reference_generation", checksum: batchVideoReferenceGenerationChecksum, apply: func(tx *gorm.DB) error {
+	// ---- 本地扩展迁移（独立号段 90001..90008）----
+	// 这一段固定不变：官方迁移号段从 101 继续增长也不会撞到 90000 以上，
+	// 所以以后合并上游不需要再重编号。checksum 保持本机原值，
+	// normalizeLocalExtensionMigrations 只搬版本号，不碰校验和。
+	{version: 90001, name: channelModelUpstreamPriceNoteMigrationName, checksum: channelModelUpstreamPriceNoteChecksum, apply: migrateChannelModelUpstreamPriceNote},
+	{version: 90002, name: "batch_video_production", checksum: batchVideoProductionChecksum, apply: migrateBatchVideoProduction},
+	{version: 90003, name: "batch_video_reference_generation", checksum: batchVideoReferenceGenerationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoReferenceAsset{})
 	}},
-	{version: 105, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v64", apply: func(tx *gorm.DB) error {
+	{version: 90004, name: "batch_video_validation_retry", checksum: "sha256:batch-video-validation-retry-v64", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{}, &model.BatchVideoAttempt{})
 	}},
-	{version: 106, name: "batch_video_start_schedule_priority", checksum: "sha256:batch-video-start-schedule-priority-v65", apply: func(tx *gorm.DB) error {
+	{version: 90005, name: "batch_video_start_schedule_priority", checksum: "sha256:batch-video-start-schedule-priority-v65", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.BatchVideoProject{}, &model.BatchVideoGenerationJob{})
 	}},
-	{version: 107, name: "batch_video_per_image_analysis", checksum: "sha256:batch-video-per-image-analysis-v66", apply: migrateBatchVideoPerImageAnalysis},
-	{version: 108, name: "generated_asset_titles", checksum: generatedAssetTitlesChecksum, apply: migrateGeneratedAssetTitles},
-	{version: 109, name: "generated_asset_order", checksum: generatedAssetOrderChecksum, apply: migrateGeneratedAssetOrder},
+	{version: 90006, name: "batch_video_per_image_analysis", checksum: "sha256:batch-video-per-image-analysis-v66", apply: migrateBatchVideoPerImageAnalysis},
+	{version: 90007, name: "generated_asset_titles", checksum: generatedAssetTitlesChecksum, apply: migrateGeneratedAssetTitles},
+	{version: 90008, name: "generated_asset_order", checksum: generatedAssetOrderChecksum, apply: migrateGeneratedAssetOrder},
 }
 
 func migrateAPILogGenerationContent(tx *gorm.DB) error {
@@ -1271,7 +1277,7 @@ func normalizeLegacyUpstreamPriceNoteMigration(tx *gorm.DB) error {
 	result := tx.Model(&schemaMigration{}).
 		Where("version = ? AND name = ? AND checksum = ?", legacy.Version, legacy.Name, legacy.Checksum).
 		Updates(map[string]any{
-			"version":  102,
+			"version":  localExtensionMigrationBase + 1,
 			"name":     channelModelUpstreamPriceNoteMigrationName,
 			"checksum": channelModelUpstreamPriceNoteChecksum,
 		})
@@ -1300,7 +1306,7 @@ func migrateSchemaV56(tx *gorm.DB) error {
 }
 
 
-// localExtensionMigrationNames 是本机扩展迁移在 v61-v68 时期的名称。
+// localExtensionMigrationNames 是本机扩展迁移的名称，顺序对应 90001..90008。
 // 合并上游 v1.8.3 后，v61-v92 让位给官方迁移，本机 8 个迁移后移到 v93-v100。
 var localExtensionMigrationNames = []string{
 	channelModelUpstreamPriceNoteMigrationName,
@@ -1313,15 +1319,14 @@ var localExtensionMigrationNames = []string{
 	"generated_asset_order",
 }
 
-// normalizeLocalExtensionMigrations 把已部署过的本机扩展迁移记录从 v61-v68 后移到 v93-v100。
-// 只改版本号、不动 name/checksum，因此新版 validateMigrationRecord 校验仍会通过；
-// 腾出的 v61-v92 由官方迁移正常执行。函数幂等：只在旧布局存在且新编号未占用时执行。
+// normalizeLocalExtensionMigrations 把已部署过的本机扩展迁移记录（无论历史上在哪个
+// 编号区间）统一搬到独立的 90001..90008 号段。
+// 只改版本号、不动 name/checksum，因此 validateMigrationRecord 校验仍会通过；
+// 腾出的官方号段由官方迁移正常执行。函数按名称定位，幂等，一次写成后不再变动。
 func normalizeLocalExtensionMigrations(tx *gorm.DB) error {
-	// 本机扩展迁移在历史部署里出现过两个编号区间：
-	//   v61-v68  —— v1.6.x 时代的原始编号
-	//   v93-v100 —— 合并 v1.8.3 时的临时编号
-	// v1.8.5 起官方占用 v93-v101，所以两个区间都必须搬到现在的位置。
-	const localFirst = int64(102)
+	// 历史部署里本机迁移出现过多个编号区间（v61-v68 / v93-v100 / v102-v109）。
+	// 这里不假设旧编号在哪，按名称定位后统一搬到 90001..90008。
+	const localFirst = localExtensionMigrationBase + 1
 	targets := make([]int64, len(localExtensionMigrationNames))
 	for i := range targets {
 		targets[i] = localFirst + int64(i)

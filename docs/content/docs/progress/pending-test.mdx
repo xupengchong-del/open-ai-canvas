@@ -18,8 +18,9 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 ## 合并上游 v1.8.5
 
 - 已实现：本地 `local/daily` 再次合并上游 `upstream/main`（v1.8.5，`bae6a36c`），新增 81 个官方提交，本地功能全部保留。
-- 迁移编号：上游 v1.8.5 新增 v93–v101（电商轮次、短剧风格、渠道网站、MCP 连接、创作对话历史等），本地 8 个扩展迁移从 v93–v100 再次后移到 **v102–v109**，`checksum` 保持原值，`CurrentSchemaVersion = 109`。
-- 迁移归一化升级：`normalizeLocalExtensionMigrations` 改为按名称定位，支持历史编号 v61–v68 与 v93–v100 两种布局统一搬到 102–109，用负数暂存区两阶段更新避免主键冲突；`migrateChannelModelUpstreamPriceNote`、`migrateGeneratedAsset*`、`migrateBatchVideoPerImageAnalysis` 增加表存在性守卫，全新库与部分迁移的测试库不再报「no such table」。
+- 迁移编号：上游 v1.8.5 新增 v93–v101（电商轮次、短剧风格、渠道网站、MCP 连接、创作对话历史等）。本机 8 个扩展迁移改用**独立高位号段 90001–90008**，`CurrentSchemaVersion = 90008` 固定不变；官方号段从 101 继续增长也不会撞号，以后合并上游不需要再重编号。`checksum` 保持本机原值。
+- 迁移归一化升级：`normalizeLocalExtensionMigrations` 按名称定位，把历史编号（v61–v68 / v93–v100 / v102–v109）统一搬到 90001–90008，用负数暂存区两阶段更新避免主键冲突；函数一次写成，后续官方升级不再变动。`migrateChannelModelUpstreamPriceNote`、`migrateGeneratedAsset*`、`migrateBatchVideoPerImageAnalysis` 增加表存在性守卫，全新库与部分迁移的测试库不再报「no such table」。
+- 已验证：新增 `TestLocalExtensionMigrationsUseDedicatedRange`（本机迁移全在独立号段、官方迁移不侵入、`CurrentSchemaVersion` 等于末项）与 `TestLocalExtensionRangeSurvivesOfficialGrowth`（人为把官方号段推进到 v160，归一化与完整迁移仍通过、ready=true）。
 - 融合点：创作页水合改用上游 `CreationHistorySync` 跨设备同步，本机的 `autoRecoverCreationMessages` 挂在同一水合点之后，恢复结果通过 `session.save` 持久化；模型能力编辑器合并上游 `templateEditing` 与本机 `priority`/`audio` 分区；渠道模型目录保留本机上游价格（`PreviewAdminChannelModels` + `sync-upstream-prices`），模型列表走上游 catalog 快照。
 - CSS：`globals.css` 与 `model-picker.css` 以 v1.8.5 为基线重新贴回本地追加规则（18987 + 1015 行）。
 - [ ] 用户验收：升级后创作页历史仍在，跨设备登录能看到同一份对话；「生成中/失败」消息仍会自动恢复。
@@ -29,7 +30,7 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 ## 合并上游 v1.8.3 与本地扩展
 
 - 已实现：本地 `local/daily` 合并上游 `upstream/main`（v1.8.3，`ee6c0ee2`），保留本地 54 个提交的功能。合并提交双父：`5dca3c56` + 融合修复 `84686321`。
-- 迁移编号：本地 8 个迁移从 v61-v68 后移到 v93-v100（`channel_model_upstream_price_note`、`batch_video_*`、`generated_asset_*`），`CurrentSchemaVersion = 100`；checksum 保持原值，腾出 v61-v92 给上游 32 个迁移（drama、电商等）执行。（后续 v1.8.5 又后移到 v102–v109，见上节。）
+- 迁移编号：本地 8 个迁移从 v61-v68 后移到 v93-v100（`channel_model_upstream_price_note`、`batch_video_*`、`generated_asset_*`），`CurrentSchemaVersion = 100`；checksum 保持原值，腾出 v61-v92 给上游 32 个迁移（drama、电商等）执行。（后续 v1.8.5 改用独立号段 90001–90008，见上节。）
 - 存储策略（重点保真）：`uploadForcesLocalStorage`、`isGeneratedVisualStorageTargetLocal`、`VideoStorageTargetLocal/OSS`、`storeTaskMediaFile` 的 `forceLocal` 参数与 `task_render`/`resource_store`/`task_media_recovery` 调用链全部保留；同时融合上游 `fallbackCause` 兜底（对象存储写失败落本地并登记补传任务）。
 - 创作页补回两个本地功能：`autoRecoverCreationMessages`（水合时把后端已成功但页面显示「生成中/失败」的消息静默恢复结果）与 `removeCreationRecord`（逐条删除生成记录，素材保留、本页在跑的任务先取消、有产物时弹确认框）。
 - 已验证：`go build ./...`、`go test ./...`（42 包）、`tsc --noEmit`（0 错误）、`bun run build` 通过；新增 `web/test/creation-auto-recover.test.ts`（6 例）与恢复 `web/test/creation-record-delete.test.ts`（7 例）均通过。
