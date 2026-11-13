@@ -6,6 +6,7 @@
 #   ./nas-deploy.sh deploy          同上；首次运行自动初始化（建目录、生成 .env、克隆仓库、签自签证书）
 #   ./nas-deploy.sh sync-api        把本机开发库的模型渠道 / 密钥 / 管理员账号同步到 NAS
 #   ./nas-deploy.sh pull-models     反向操作：把 NAS 上的模型配置拉回本机开发库（--dry-run 预览）
+#   ./nas-deploy.sh rollback        回滚：恢复数据库备份 → 切回回滚镜像 → 代码回退（部署失败时用）
 #   ./nas-deploy.sh status          容器状态与版本
 #   ./nas-deploy.sh logs [服务名]   查看日志，默认 backend
 #   ./nas-deploy.sh shell           登录 NAS shell
@@ -323,6 +324,19 @@ else
   echo '    备份失败：可选继续，但升级跨越 32 个官方迁移，建议先排查'
 fi
 
+echo '--- 保留回滚镜像 ---'
+# 构建会覆盖 :server tag，先把当前可用镜像另存一份，回滚时直接切 tag，不必重新构建。
+for image in backend web yingce-agent; do
+  if d docker image inspect "open-ai-canvas-\$image:server" >/dev/null 2>&1; then
+    d docker tag "open-ai-canvas-\$image:server" "open-ai-canvas-\$image:rollback" && echo "    已保留 open-ai-canvas-\$image:rollback"
+  fi
+done
+# 同时记下当前可用提交，回滚时据此 reset 代码。
+if [ -f "\$DATA/.deployed-sha" ]; then
+  cp "\$DATA/.deployed-sha" "\$DATA/.rollback-sha" 2>/dev/null || true
+  echo "    回滚提交记录：\$(cat "\$DATA/.rollback-sha" 2>/dev/null || echo 未知)"
+fi
+
 echo '--- 镜像 ---'
 if [ '$FORCE_BUILD' = '1' ] || ! d docker image inspect open-ai-canvas-web:server >/dev/null 2>&1 || [ ! -f "\$DATA/.deployed-sha" ] || [ "\$(cat "\$DATA/.deployed-sha")" != "\$HEAD_SHA" ]; then
   # NAS 只有约 3.8GB 内存：镜像必须逐个串行构建。
@@ -540,6 +554,58 @@ cmd_shell() {
     -o StrictHostKeyChecking=accept-new "$NAS_USER@$NAS_HOST"
 }
 
+cmd_rollback() {
+  bold "回滚 NAS 到上一个可用版本"
+  info "步骤：恢复数据库备份 → 切回回滚镜像 → 代码回退 → 启动验证"
+  warn "数据库会回到部署前状态，部署之后产生的数据会丢失（备份文件在 NAS 上保留）。"
+
+  remote <<'ROLLBACK'
+$(prelude)
+set -e
+for image in backend web yingce-agent; do
+  docker image inspect "open-ai-canvas-$image:rollback" >/dev/null 2>&1 || { echo "缺少回滚镜像：open-ai-canvas-$image:rollback"; exit 1; }
+done
+BACKUP="$(ls -t "$DATA"/backups/pre-upgrade-*.sql.gz 2>/dev/null | head -1)"
+[ -n "$BACKUP" ] || { echo "找不到数据库备份（$DATA/backups/pre-upgrade-*.sql.gz）"; exit 1; }
+echo "使用备份：$BACKUP"
+ROLLBACK_SHA="$(cat "$DATA/.rollback-sha" 2>/dev/null || echo)"
+echo "回滚提交：${ROLLBACK_SHA:-未知（只恢复数据库与镜像）}"
+
+echo '--- 停止写入 ---'
+compose stop backend web yingce-agent migrate >/dev/null 2>&1 || true
+
+echo '--- 恢复数据库 ---'
+compose exec -T postgres psql -U open_ai_canvas -d postgres -q -c "DROP DATABASE IF EXISTS open_ai_canvas WITH (FORCE);"
+compose exec -T postgres psql -U open_ai_canvas -d postgres -q -c "CREATE DATABASE open_ai_canvas OWNER open_ai_canvas;"
+gunzip -c "$BACKUP" | compose exec -T postgres psql -U open_ai_canvas -d open_ai_canvas -q
+echo '    数据库已恢复'
+
+echo '--- 切回回滚镜像 ---'
+for image in backend web yingce-agent; do
+  docker tag "open-ai-canvas-$image:rollback" "open-ai-canvas-$image:server"
+done
+echo '    镜像已切回'
+
+if [ -n "$ROLLBACK_SHA" ]; then
+  echo '--- 回退代码 ---'
+  cd "$APP"
+  git fetch --depth 1 origin "$ROLLBACK_SHA" >/dev/null 2>&1 || git fetch --depth 1 origin '$BRANCH' >/dev/null 2>&1 || true
+  git reset --hard "$ROLLBACK_SHA" >/dev/null
+  echo "$ROLLBACK_SHA" > "$DATA/.deployed-sha"
+  echo "    代码已回退到 $ROLLBACK_SHA"
+fi
+
+echo '--- 启动 ---'
+compose up -d --remove-orphans --wait --wait-timeout 600 || compose up -d --remove-orphans
+echo '--- 状态 ---'
+compose ps
+echo '--- 数据库结构版本 ---'
+compose exec -T postgres psql -U open_ai_canvas -d open_ai_canvas -At -c "SELECT max(version) FROM schema_migrations;" || true
+ROLLBACK
+  info "回滚完成，请核对上面的容器状态与数据库结构版本。"
+  info "验证：curl -sk https://$NAS_HOST:$PUBLIC_PORT/api/health"
+}
+
 usage() {
   awk 'NR>1 && /^#/ {sub(/^# ?/,""); print} NR>1 && !/^#/ {exit}' "$0"
 }
@@ -551,6 +617,7 @@ main() {
     deploy|update) cmd_deploy ;;
     sync-api) cmd_sync_api ;;
     pull-models) shift; cmd_pull_models "$@" ;;
+    rollback) cmd_rollback ;;
     status) cmd_status ;;
     logs) shift; cmd_logs "${1:-backend}" ;;
     shell) cmd_shell ;;
