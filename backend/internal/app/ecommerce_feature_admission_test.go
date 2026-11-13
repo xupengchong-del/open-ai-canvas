@@ -25,7 +25,7 @@ func ecommerceCreationTestService(t *testing.T) (*Service, *gorm.DB, string, Cre
 }
 
 // closedEcommerceFeatures 显式构造「电商关闭」场景。
-// 默认值已改为开放电商（见 platform.DefaultFeatureAvailability），测试不能再隐式依赖它。
+// 不隐式依赖 DefaultFeatureAvailability：默认值由运维配置决定，测试意图应独立于它。
 func closedEcommerceFeatures() FeatureAvailability {
 	features := defaultFeatureAvailability()
 	features.EcommerceEnabled, features.EcommerceVideoEnabled = false, false

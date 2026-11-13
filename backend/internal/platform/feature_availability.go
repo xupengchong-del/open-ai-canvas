@@ -69,13 +69,11 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		SystemPluginsVisibleToUsers:  true,
 		InspirationSourcesVisible:    true,
 		TimelineTranscriptionEnabled: true,
-		// 电商 Agent 默认开放：商品图依赖 ImageWorkbench、商品视频依赖 VideoWorkbench，
-		// 后端 requireTaskGenerationFeatures 会逐个校验，四项必须一起打开才完整可用。
-		ImageWorkbenchEnabled: true,
-		VideoWorkbenchEnabled: true,
-		BatchVideoEnabled:     true,
-		EcommerceEnabled:      true,
-		EcommerceVideoEnabled: true,
+		ImageWorkbenchEnabled:        false,
+		VideoWorkbenchEnabled:        false,
+		BatchVideoEnabled:            true,
+		EcommerceEnabled:             false,
+		EcommerceVideoEnabled:        false,
 	}
 }
 

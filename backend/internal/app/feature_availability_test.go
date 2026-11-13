@@ -20,9 +20,8 @@ func TestFeatureAvailabilityDefaultsToDisableFrontendModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 旧口径「新功能默认关闭」已被「默认开放电商」取代：四项必须一起打开才完整可用。
-	if !setting.EcommerceEnabled || !setting.EcommerceVideoEnabled || !setting.ImageWorkbenchEnabled || !setting.VideoWorkbenchEnabled {
-		t.Fatalf("ecommerce feature chain must default to enabled: %#v", setting)
+	if setting.EcommerceEnabled || setting.EcommerceVideoEnabled {
+		t.Fatalf("new features must default to disabled: %#v", setting)
 	}
 	if !setting.WelcomeEnabled {
 		t.Fatal("welcome should be enabled by default")
@@ -46,9 +45,8 @@ func TestFeatureAvailabilityLegacySettingKeepsCustomChannelsEnabled(t *testing.T
 	if setting.ShortDramaEnabled || !setting.CustomChannelsEnabled || setting.FrontendModelsEnabled || !setting.PluginCenterEnabled || !setting.SystemPluginsVisibleToUsers {
 		t.Fatalf("FeatureAvailability() = %#v", setting)
 	}
-	// 同上：legacy 配置缺少电商字段时，按默认值开放电商依赖链。
-	if !setting.EcommerceEnabled || !setting.EcommerceVideoEnabled {
-		t.Fatalf("ecommerce features must default to enabled: %#v", setting)
+	if setting.EcommerceEnabled || setting.EcommerceVideoEnabled {
+		t.Fatalf("new features must default to disabled: %#v", setting)
 	}
 	if !setting.WelcomeEnabled {
 		t.Fatal("existing settings without welcomeEnabled should keep welcome enabled")
@@ -220,13 +218,4 @@ func newFeatureAvailabilityTestService(t *testing.T) (*Service, *gorm.DB) {
 		t.Fatal(err)
 	}
 	return New(repository.New(db), t.TempDir()), db
-}
-
-// 电商 Agent 默认开放：商品图依赖 ImageWorkbench、商品视频依赖 VideoWorkbench
-// 与 EcommerceVideo，四项缺一项都会让 requireTaskGenerationFeatures 拒绝任务。
-func TestDefaultFeatureAvailabilityOpensEcommerceChain(t *testing.T) {
-	value := platform.DefaultFeatureAvailability()
-	if !value.EcommerceEnabled || !value.EcommerceVideoEnabled || !value.ImageWorkbenchEnabled || !value.VideoWorkbenchEnabled {
-		t.Fatalf("电商依赖链未全部默认开放：%+v", value)
-	}
 }

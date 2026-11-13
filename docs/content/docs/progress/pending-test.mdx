@@ -5,15 +5,13 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
-## 电商 Agent 默认开放
+## 电商 Agent 入口默认关闭
 
-- 已实现：`platform.DefaultFeatureAvailability()` 与前端 `defaultFeatureAvailability` 同步把 `ecommerceEnabled`、`ecommerceVideoEnabled`、`imageWorkbenchEnabled`、`videoWorkbenchEnabled` 默认设为 `true`。原先四项全为 `false`，且 NAS 库从未写入 `feature_availability` 设置，导致前台侧栏没有电商入口。
-- 原因：后端 `requireTaskGenerationFeatures` 对电商商品图仍校验 `ImageWorkbench`，商品视频校验 `EcommerceVideo` 与 `VideoWorkbench`；只开电商开关会「看得到但生成不了」，四项必须一起打开。
-- 副作用：`imageWorkbenchEnabled` / `videoWorkbenchEnabled` 是全局开关，侧栏会同时出现「生图」「视频」两个工作台入口（`/toolbox/image`、`/toolbox/video`）。
-- 生效范围：仅在 `system_settings` 缺少 `feature_availability` 记录时走默认值；管理员在后台保存过配置后以配置为准，不受影响。可在「设置 → 功能开放」随时关闭。
-- 测试：新增 `TestDefaultFeatureAvailabilityOpensEcommerceChain`；`web/test/workbench-features.test.ts` 旧断言「新工作台入口默认关闭」已按新口径重写；5 个隐式依赖旧默认值的电商准入测试改为显式构造关闭场景。
-- 验证：`go test ./...`（46 包）、前端相关测试 37 例、`tsc --noEmit` 0 错误、`bun run build` 通过。
-- [ ] 用户验收：部署后前台侧栏出现「电商 Agent」，商品图与商品视频可正常生成；后台「功能开放」四个开关显示为开启且可手动关闭。
+- 现状：`platform.DefaultFeatureAvailability()` 与前端 `defaultFeatureAvailability` 保持上游口径，`ecommerceEnabled` / `ecommerceVideoEnabled` / `imageWorkbenchEnabled` / `videoWorkbenchEnabled` 默认均为 `false`；NAS 库没有 `feature_availability` 记录，所以前台侧栏默认不显示电商入口。
+- 开启方式：登录后台 → 设置 → 功能开放，打开「电商 Agent」。注意依赖链——商品图需要「图片生成」(`imageWorkbenchEnabled`)，商品视频需要「视频生成」(`videoWorkbenchEnabled`) 与「商品视频」(`ecommerceVideoEnabled`)，后端 `requireTaskGenerationFeatures` 会逐个校验，缺一项就会拒绝任务。
+- 副作用：开启 `imageWorkbenchEnabled` / `videoWorkbenchEnabled` 后，侧栏会同时出现「生图」`/toolbox/image` 与「视频」`/toolbox/video` 两个工作台入口。
+- 已决定由管理员手动开启，因此代码不修改默认值；此前尝试改默认值的改动已撤回。
+- 测试：`TestFeatureAvailabilityDefaultsToDisableFrontendModels` 等仍断言默认关闭；电商准入测试用 `closedEcommerceFeatures()` 显式构造关闭场景，不隐式依赖默认值。
 
 ## 合并上游 v1.8.5
 

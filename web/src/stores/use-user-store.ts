@@ -61,12 +61,11 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     pluginCenterEnabled: true,
     systemPluginsVisibleToUsers: true,
     inspirationSourcesVisible: true,
-    // 与后端 DefaultFeatureAvailability 保持一致：电商 Agent 及其商品图/视频默认开放。
-    imageWorkbenchEnabled: true,
-    videoWorkbenchEnabled: true,
+    imageWorkbenchEnabled: false,
+    videoWorkbenchEnabled: false,
     batchVideoEnabled: true,
-    ecommerceEnabled: true,
-    ecommerceVideoEnabled: true,
+    ecommerceEnabled: false,
+    ecommerceVideoEnabled: false,
 };
 
 type UserStore = {
