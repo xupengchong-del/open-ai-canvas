@@ -589,10 +589,18 @@ echo '    镜像已切回'
 if [ -n "$ROLLBACK_SHA" ]; then
   echo '--- 回退代码 ---'
   cd "$APP"
-  git fetch --depth 1 origin "$ROLLBACK_SHA" >/dev/null 2>&1 || git fetch --depth 1 origin '$BRANCH' >/dev/null 2>&1 || true
-  git reset --hard "$ROLLBACK_SHA" >/dev/null
-  echo "$ROLLBACK_SHA" > "$DATA/.deployed-sha"
-  echo "    代码已回退到 $ROLLBACK_SHA"
+  # 工作副本是浅克隆，目标提交可能不在本地；先补齐历史再 reset，避免静默失败。
+  if ! git cat-file -e "${ROLLBACK_SHA}^{commit}" 2>/dev/null; then
+    echo "    本地缺少 $ROLLBACK_SHA，获取完整历史"
+    git fetch --unshallow origin '$BRANCH' >/dev/null 2>&1 || git fetch origin '$BRANCH' >/dev/null 2>&1 || true
+  fi
+  if ! git cat-file -e "${ROLLBACK_SHA}^{commit}" 2>/dev/null; then
+    echo "    仍无法获取 $ROLLBACK_SHA：数据库与镜像已回滚，但代码保持当前版本，需人工处理"
+  else
+    git reset --hard "$ROLLBACK_SHA" >/dev/null
+    echo "$ROLLBACK_SHA" > "$DATA/.deployed-sha"
+    echo "    代码已回退到 $ROLLBACK_SHA"
+  fi
 fi
 
 echo '--- 启动 ---'
