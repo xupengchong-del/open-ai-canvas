@@ -27,9 +27,14 @@ var errMediaStagingFull = errors.New("作品暂存空间不足")
 // 单次结果下载的时限：上游慢但一直在传输时允许跑完，长时间收不到任何字节才判定卡住。
 // 原来的固定 3 分钟总时限会让慢速结果服务器上的大图永远下载不完——每次重试都从零开始，
 // 又在差不多同一位置超时。总时限仍有上限，避免一个下载长期占住有限的保存并发槽位。
+//
+// 实测某条线路（NAS 直连上游）单连接约 33KB/s，7.4MB 视频需要约 230 秒；两个并发下载时
+// 连接之间严重不公平（19.7KB/s 与 5KB/s），慢的那条要 1400 秒以上，且常出现长时间收不到
+// 字节而卡在旧 90 秒停滞上限。因此把停滞容忍放宽到 5 分钟、总时限放宽到 30 分钟，让慢速
+// 线路上的结果能保存下来，而不是每次重试都从头开始。
 var (
-	mediaDownloadMaxDuration  = 15 * time.Minute
-	mediaDownloadStallTimeout = 90 * time.Second
+	mediaDownloadMaxDuration  = 30 * time.Minute
+	mediaDownloadStallTimeout = 5 * time.Minute
 )
 
 // errMediaDownloadStalled 包装 DeadlineExceeded，保证停滞与总超时一样按可重试的保存失败处理。
