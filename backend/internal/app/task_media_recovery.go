@@ -54,7 +54,12 @@ func (e *mediaRecoveryError) Error() string {
 }
 func (e *mediaRecoveryError) Unwrap() error { return e.cause }
 
-var mediaRecoverySlots = make(chan struct{}, 2)
+// mediaRecoverySlots 限制同时进行的结果保存数量。
+// 实测当前线路：单连接约 33.7KB/s（7.4MB 视频约 230 秒拉完），但两个并发连接会互相
+// 饿死（19.7KB/s 与 5KB/s），总吞吐反而低于单连接，2 并发跑满 30 分钟仍未拉完。
+// 因此只留 1 个槽位，让保存串行进行；拿不到槽位的任务返回可重试的 busy，稍后再来。
+// 线路恢复后可以调回 2。
+var mediaRecoverySlots = make(chan struct{}, 1)
 var mediaRecoveryDelays = []time.Duration{15 * time.Second, time.Minute, 3 * time.Minute, 10 * time.Minute}
 
 func mediaStageLabel(stage string) string {
