@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"sync"
 
 	"errors"
 	"strings"
@@ -35,7 +37,43 @@ const (
 	videoCodecMPEG4         = "mpeg4"
 	probeMaxMoovSize        = 128 << 20
 	playbackPersistAttempts = 3
+
+	// playbackTranscodeConcurrencyEnv 控制同时运行的播放转码 ffmpeg 数量。
+	playbackTranscodeConcurrencyEnv = "CANVAS_PLAYBACK_TRANSCODE_CONCURRENCY"
+	defaultPlaybackTranscodeLimit   = 2
+	maxPlaybackTranscodeLimit       = 8
 )
+
+var (
+	playbackTranscodeSlotsOnce sync.Once
+	playbackTranscodeSlots     chan struct{}
+)
+
+// playbackTranscodeLimit 从环境变量解析并发上限：无效或越界回退默认值并钳制到上限，
+// 避免误配成极大值而失去保护意义。抽成纯函数便于测试。
+func playbackTranscodeLimit() int {
+	limit := defaultPlaybackTranscodeLimit
+	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(playbackTranscodeConcurrencyEnv))); err == nil && n > 0 {
+		limit = n
+	}
+	if limit > maxPlaybackTranscodeLimit {
+		limit = maxPlaybackTranscodeLimit
+	}
+	return limit
+}
+
+// playbackTranscodeLimiter 返回播放转码的并发闸口。
+// 断电重启后 BackfillPlaybackTranscodes 会把所有卡住的转码任务一次性派发，
+// 若不设闸口，几十个 libx264 同时启动会吃光 4GB 内存机器的内存，触发
+// swap 抖动与 IO 打满，进而拖垮数据库与整个服务。限制同时运行的 ffmpeg
+// 数量可把内存峰值锁在可控范围；拿不到槽位的 goroutine 阻塞等待（几乎不耗内存），
+// 不改变 maybeStartPlaybackTranscode 对上传路径的非阻塞语义。
+func playbackTranscodeLimiter() chan struct{} {
+	playbackTranscodeSlotsOnce.Do(func() {
+		playbackTranscodeSlots = make(chan struct{}, playbackTranscodeLimit())
+	})
+	return playbackTranscodeSlots
+}
 
 // probeVideoCodec 解析本地 mp4 的 stsd 首个视频 sample entry fourcc，返回 h264/h265 等。
 // 非 mp4 容器或解析失败返回空串（调用方按“无需转码”处理，前端仍可用原件）。
@@ -216,6 +254,12 @@ func markPlaybackNone(s *Service, resource *model.Resource) {
 
 // runPlaybackTranscode 转码本地原件到 playback/<id>.mp4 并回写状态（幂等按 id 重载）。
 func (s *Service) runPlaybackTranscode(userID string, resourceID string, src string) {
+	// 占用并发槽位：真正执行 ffmpeg 前先排队，限制同时运行的转码数量。
+	// 所有派发路径（启动回填、上传就绪）最终都走到这里，因此只需在此处设闸。
+	slots := playbackTranscodeLimiter()
+	slots <- struct{}{}
+	defer func() { <-slots }()
+
 	// 转码 goroutine 意外 panic 时把状态落 failed，避免 processing 卡死到下次重启。
 	defer func() {
 		if r := recover(); r != nil {
