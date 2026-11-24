@@ -114,6 +114,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # 容器化健康监控：随 compose 启动，断电后由 restart 策略自动拉起。
+  # 读 /proc 全局指标 + 通过 docker.sock 抓容器状态与 postgres 慢查询。
+  # 慢查询本身由 postgres 的 log_min_duration_statement 持续记录。
+  monitor:
+    image: alpine:3.22
+    container_name: open-ai-canvas-monitor
+    entrypoint: ["/bin/sh", "/monitor/nas-monitor.sh"]
+    environment:
+      MONITOR_LOG_DIR: /var/log/monitor
+      MONITOR_INTERVAL: ${MONITOR_INTERVAL:-60}
+      MONITOR_LOAD_THRESHOLD: ${MONITOR_LOAD_THRESHOLD:-3.0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts/nas-monitor.sh:/monitor/nas-monitor.sh:ro
+      - ${CANVAS_MONITOR_LOG_DIR:-./monitor-data}:/var/log/monitor
+    restart: unless-stopped
+    mem_limit: 128m
+
 volumes:
   backend-data:
   postgres-data:
