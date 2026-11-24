@@ -85,11 +85,16 @@ func (s *Service) UserAsset(userID string, id string) (json.RawMessage, error) {
 }
 
 func (s *Service) UpsertUserAsset(userID string, raw json.RawMessage) (UserDataSummary, error) {
+	return s.UpsertAssetAs(userID, raw, userID, true)
+}
+
+func (s *Service) UpsertAssetAs(userID string, raw json.RawMessage, actorID string, manageAll bool) (UserDataSummary, error) {
 	asset, err := AssetFromJSON(userID, raw)
 	if err != nil {
 		return UserDataSummary{}, err
 	}
 	err = s.host.WithStorageLock(func() error {
+		asset.CreatedBy = actorID
 		if asset.FolderID != "" {
 			if _, err := s.repo.AssetFolderForUser(userID, asset.FolderID); err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -103,8 +108,11 @@ func (s *Service) UpsertUserAsset(userID string, raw json.RawMessage) (UserDataS
 			return existingErr
 		}
 		if existing != nil && isExportCountOnlyRewrite(existing.PayloadJSON, asset.PayloadJSON) {
-			// 导出计数只是标记：素材库按 updated_at 排序，这类写入不能把素材顶到列表最前。
+			// 本地定制：导出计数只是标记，素材库按 updated_at 排序，这类写入不能把素材顶到列表最前。
 			asset.UpdatedAt = existing.UpdatedAt
+		}
+		if !manageAll && existing != nil && existing.CreatedBy != actorID && (existing.Status == model.AssetVersionStatusArchived) != (asset.Status == model.AssetVersionStatusArchived) {
+			return kernel.Forbidden("仅素材贡献者或空间所有者可以归档和恢复此素材")
 		}
 		// 方舟认证分类只由服务端写入认证结果时设置；客户端只能保留已在该分类的素材。
 		if asset.Category == model.AssetCategoryArk && (existing == nil || existing.Category != model.AssetCategoryArk) {
@@ -238,63 +246,6 @@ func (s *Service) UserCanvasProject(userID string, id string) (json.RawMessage, 
 		return nil, err
 	}
 	return canvasProjectPayload(*project)
-}
-
-// UpsertAssetAs 是带操作者身份的素材写入：团队空间按 actorID/manageAll 校验归档权限。
-// 保留本地导出计数排序优化，同时接入上游团队写入路径。
-func (s *Service) UpsertAssetAs(userID string, raw json.RawMessage, actorID string, manageAll bool) (UserDataSummary, error) {
-	asset, err := AssetFromJSON(userID, raw)
-	if err != nil {
-		return UserDataSummary{}, err
-	}
-	err = s.host.WithStorageLock(func() error {
-		asset.CreatedBy = actorID
-		if asset.FolderID != "" {
-			if _, err := s.repo.AssetFolderForUser(userID, asset.FolderID); err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return kernel.BadAuthRequest("素材分类不存在")
-				}
-				return err
-			}
-		}
-		existing, existingErr := s.repo.AssetForUser(userID, asset.ID)
-		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
-			return existingErr
-		}
-		if existing != nil && isExportCountOnlyRewrite(existing.PayloadJSON, asset.PayloadJSON) {
-			// 导出计数只是标记：素材库按 updated_at 排序，这类写入不能把素材顶到列表最前。
-			asset.UpdatedAt = existing.UpdatedAt
-		}
-		if !manageAll && existing != nil && existing.CreatedBy != actorID && (existing.Status == model.AssetVersionStatusArchived) != (asset.Status == model.AssetVersionStatusArchived) {
-			return kernel.Forbidden("仅素材贡献者或空间所有者可以归档和恢复此素材")
-		}
-		if asset.Category == model.AssetCategoryArk && (existing == nil || existing.Category != model.AssetCategoryArk) {
-			return kernel.BadAuthRequest("方舟认证分类由认证结果自动设置，不能手动选择")
-		}
-		if existing != nil && existing.PayloadJSON != asset.PayloadJSON {
-			if err := s.ValidateAssetCanvasReferences(userID, asset); err != nil {
-				return err
-			}
-		}
-		existingBytes := int64(0)
-		if existing != nil {
-			existingBytes = int64(len([]byte(existing.PayloadJSON)))
-		}
-		if err := s.host.StructuredQuota(userID, "asset", errors.Is(existingErr, gorm.ErrRecordNotFound), int64(len(raw))-existingBytes); err != nil {
-			return err
-		}
-		if err := s.repo.UpsertAsset(&asset); err != nil {
-			return err
-		}
-		if existingErr != nil {
-			s.host.RecordActivity(userID, "asset", 1)
-		}
-		return nil
-	})
-	if err != nil {
-		return UserDataSummary{}, err
-	}
-	return UserDataSummary{ID: asset.ID, FolderID: asset.FolderID, Kind: asset.Kind, Category: string(asset.Category), Status: string(asset.Status), Title: asset.Title, CreatedAt: asset.CreatedAt, UpdatedAt: asset.UpdatedAt}, nil
 }
 
 func (s *Service) UpsertUserCanvasProject(userID string, raw json.RawMessage) (UserDataSummary, error) {
@@ -527,6 +478,9 @@ func (s *Service) upsertUserCanvasProjectWithHistory(userID string, raw json.Raw
 		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 			return existingErr
 		}
+		if err := s.validateNewWorkspaceBindings(userID, existing, raw); err != nil {
+			return err
+		}
 		existingBytes := int64(0)
 		project.Revision = *version.Revision
 		project.UpdatedAt = time.Now().UTC()
@@ -599,49 +553,6 @@ func (s *Service) DeleteUserCanvasProject(userID string, id string) error {
 		return canvasMutationError("canvas_edit_lease_conflict", err.Error())
 	}
 	return err
-}
-
-// isExportCountOnlyRewrite 判断两份素材 JSON 的内容是否一致：只允许 metadata.exportCount 和记账时间不同。
-func isExportCountOnlyRewrite(before string, after string) bool {
-	if before == after {
-		return false
-	}
-	left, ok := normalizedAssetContent(before)
-	if !ok {
-		return false
-	}
-	right, ok := normalizedAssetContent(after)
-	return ok && left == right
-}
-
-// normalizedAssetContent 去掉记账时间与导出计数，保留其余字段原始字节用于比较。
-func normalizedAssetContent(raw string) (string, bool) {
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return "", false
-	}
-	delete(payload, "createdAt")
-	delete(payload, "updatedAt")
-	if metadataRaw, ok := payload["metadata"]; ok {
-		var metadata map[string]json.RawMessage
-		if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
-			return "", false
-		}
-		if _, ok := metadata["exportCount"]; ok {
-			delete(metadata, "exportCount")
-			encoded, err := json.Marshal(metadata)
-			if err != nil {
-				return "", false
-			}
-			payload["metadata"] = encoded
-		}
-	}
-	// map 键排序一致，其余字段保留原始字节，同一素材只差计数时两边归一化结果相同。
-	normalized, err := json.Marshal(payload)
-	if err != nil {
-		return "", false
-	}
-	return string(normalized), true
 }
 
 func AssetFromJSON(userID string, raw json.RawMessage) (model.Asset, error) {
@@ -722,7 +633,10 @@ func canvasProjectFromJSONWithValidation(userID string, raw json.RawMessage, val
 		UpdatedAt string `json:"updatedAt"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return model.CanvasProject{}, kernel.BadAuthRequest("画布数据格式错误")
+		return model.CanvasProject{}, kernel.WrapAppError(http.StatusBadRequest, "画布数据格式错误", err)
+	}
+	if _, team := model.TeamIDFromContentKey(userID); team && strings.TrimSpace(payload.ProjectID) != "" {
+		return model.CanvasProject{}, kernel.BadAuthRequest("团队空间不能关联个人项目")
 	}
 	now := time.Now()
 	createdAt := parseClientTime(payload.CreatedAt, now)
@@ -784,4 +698,45 @@ func parseClientTime(value string, fallback time.Time) time.Time {
 		return parsed
 	}
 	return fallback
+}
+
+// isExportCountOnlyRewrite 判断两份素材 JSON 是否只差导出计数（本地定制）。
+func isExportCountOnlyRewrite(before string, after string) bool {
+	if before == after {
+		return false
+	}
+	left, ok := normalizedAssetContent(before)
+	if !ok {
+		return false
+	}
+	right, ok := normalizedAssetContent(after)
+	return ok && left == right
+}
+
+func normalizedAssetContent(raw string) (string, bool) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", false
+	}
+	delete(payload, "createdAt")
+	delete(payload, "updatedAt")
+	if metadataRaw, ok := payload["metadata"]; ok {
+		var metadata map[string]json.RawMessage
+		if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
+			return "", false
+		}
+		if _, ok := metadata["exportCount"]; ok {
+			delete(metadata, "exportCount")
+			encoded, err := json.Marshal(metadata)
+			if err != nil {
+				return "", false
+			}
+			payload["metadata"] = encoded
+		}
+	}
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return "", false
+	}
+	return string(normalized), true
 }
