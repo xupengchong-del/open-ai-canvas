@@ -97,6 +97,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
+    # 4GB 内存的 NAS 上必须限制 backend 内存：播放转码/任务高并发会吃光内存，
+    # 触发 swap 抖动、IO 打满并拖垮整机与数据库。留出约 1.4G 给系统与其他容器。
+    mem_limit: 2400m
+    mem_reservation: 1200m
 
   web:
     image: ${CANVAS_WEB_IMAGE:?请先配置 CANVAS_WEB_IMAGE（必须包含镜像 digest）}
