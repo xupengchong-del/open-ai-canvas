@@ -32,6 +32,11 @@ export type ChannelModelFormValues = {
 
 export type EditorSection = "identity" | "capabilities" | "pricing";
 
+/** 模型是否需要展开参数编辑（图片/视频能力，上游共享逻辑）。 */
+export function opensModelParameters(model: Pick<ChannelModel, "capability" | "protocol"> | null) {
+    return Boolean(model?.protocol && (model.capability === "image" || model.capability === "video"));
+}
+
 export function replaceChannelModelFormValues(form: Pick<FormInstance<ChannelModelFormValues>, "setFieldsValue" | "setFieldValue">, values: ChannelModelFormValues) {
     const { capabilityConfig, ...fields } = values;
     form.setFieldsValue(fields);

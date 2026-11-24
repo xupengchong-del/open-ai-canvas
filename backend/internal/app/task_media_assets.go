@@ -15,6 +15,27 @@ import (
 )
 
 // A deleted canvas/project must not be resurrected by an old download worker.
+// generationMediaAssetTitle 从任务输入与提示词推导生成素材标题（上游共享逻辑）。
+func generationMediaAssetTitle(task model.Task, kind string, index, count int) string {
+	title := ""
+	if context := taskClientContext(task.InputJSON); context != nil {
+		title = context.AssetTitle
+	}
+	if title == "" {
+		title = strings.Join(strings.Fields(task.Prompt), " ")
+		if runes := []rune(title); len(runes) > 48 {
+			title = string(runes[:48]) + "…"
+		}
+	}
+	if title == "" {
+		title = map[string]string{"text": "生成文本", "image": "生成图片", "video": "生成视频", "audio": "生成音频"}[kind] + " · " + task.ID[:min(len(task.ID), 8)]
+	}
+	if count > 1 {
+		title += fmt.Sprintf(" · %d", index+1)
+	}
+	return title
+}
+
 func (s *Service) mediaTaskProject(task *model.Task) (string, error) {
 	id := task.ProjectID
 	if id == "" {
@@ -127,10 +148,9 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 		} else {
 			data["url"] = url
 		}
-		title, err := s.nextGeneratedMediaTitle(task.UserID, checkpoint.Mode)
-		if err != nil {
-			return err
-		}
+		// 采用上游标题推导：素材名直接体现任务提示词，便于识别；本地 nextGeneratedMediaTitle
+		// 保留供其它调用方使用（日期序号命名）。
+		title := generationMediaAssetTitle(task, checkpoint.Mode, index, len(checkpoint.Items))
 		metadata := map[string]any{"source": "generation-task", "generationEffectKey": effectKey, "taskId": task.ID, "outputIndex": index}
 		if projectID != "" {
 			metadata["projectIds"] = []string{projectID}

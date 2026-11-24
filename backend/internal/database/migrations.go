@@ -53,9 +53,11 @@ const generatedAssetOrderChecksum = "sha256:generated-asset-order-v68-20261029"
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
 type SchemaStatus struct {
-	Current  int64 `json:"current"`
-	Expected int64 `json:"expected"`
-	Ready    bool  `json:"ready"`
+	Current        int64 `json:"current"`
+	Expected       int64 `json:"expected"`
+	YingceCurrent  int64 `json:"yingceCurrent"`
+	YingceExpected int64 `json:"yingceExpected"`
+	Ready          bool  `json:"ready"`
 }
 
 type schemaMigration struct {
@@ -66,6 +68,10 @@ type schemaMigration struct {
 }
 
 func (schemaMigration) TableName() string { return "schema_migrations" }
+
+type yingceSchemaMigration schemaMigration
+
+func (yingceSchemaMigration) TableName() string { return "yingce_schema_migrations" }
 
 type migration struct {
 	version  int64
@@ -362,6 +368,50 @@ var schemaMigrations = []migration{
 	{version: 100, name: "agent_mcp_connections", checksum: "sha256:agent-mcp-connections-v100", apply: migrateAgentMCP},
 	{version: 101, name: "creation_conversation_history", checksum: "sha256:creation-conversation-history-v101", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.CreationConversation{}, &model.CreationConversationMessage{}, &model.CreationConversationResource{})
+	}},
+	{version: 102, name: "wechat_oauth", checksum: "sha256:wechat-oauth-v102", apply: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&model.OAuthState{}) {
+			return nil
+		}
+		for _, field := range []string{"Purpose", "ClientID", "ProfileJSON"} {
+			if !tx.Migrator().HasColumn(&model.OAuthState{}, field) {
+				if err := tx.Migrator().AddColumn(&model.OAuthState{}, field); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
+	{version: 103, name: "mcp_tenant_boundaries", checksum: "sha256:mcp-tenant-boundaries-v103", apply: migrateMCPTenantBoundaries},
+	{version: 104, name: "agent_storage_limits", checksum: "sha256:agent-storage-limits-v104", apply: migrateAgentStorageLimits},
+	{version: 105, name: "image_usage_billing", checksum: "sha256:image-usage-billing-v105", apply: migrateImageUsageBilling},
+	{version: 106, name: "team_workspaces", checksum: "sha256:team-workspaces-v106", apply: migrateTeamWorkspaces},
+	{version: 107, name: "company_workgroups", checksum: "sha256:company-workgroups-v107", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.Team{})
+	}},
+	{version: 108, name: "shared_workspace_content", checksum: "sha256:shared-workspace-content-v108", apply: migrateSharedWorkspaceContent},
+	{version: 109, name: "model_protocol_releases", checksum: "sha256:model-protocol-releases-v109", apply: func(tx *gorm.DB) error {
+		for _, column := range []struct {
+			entity any
+			name   string
+		}{{&model.ChannelModel{}, "ProtocolRelease"}, {&model.Task{}, "ProtocolBindingJSON"}, {&model.RouteAttempt{}, "ProtocolBindingJSON"}} {
+			if !tx.Migrator().HasTable(column.entity) || tx.Migrator().HasColumn(column.entity, column.name) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(column.entity, column.name); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&model.ChannelModel{}) || tx.Migrator().HasIndex(&model.ChannelModel{}, "ProtocolRelease") {
+			return nil
+		}
+		return tx.Migrator().CreateIndex(&model.ChannelModel{}, "ProtocolRelease")
+	}},
+	{version: 110, name: "cloud_agent_history_archives", checksum: "sha256:cloud-agent-history-archives-v110-20261123", apply: func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&model.CloudAgentExecution{}, &model.CloudAgentHistoryArchive{}); err != nil {
+			return err
+		}
+		return reconcileAgentStorageUsage(tx)
 	}},
 	// ---- 本地扩展迁移（独立号段 90001..90008）----
 	// 这一段固定不变：官方迁移号段从 101 继续增长也不会撞到 90000 以上，
@@ -1397,6 +1447,11 @@ func MigrateSchema(db *gorm.DB) error {
 		}
 		if err := tx.AutoMigrate(&schemaMigration{}); err != nil {
 			return fmt.Errorf("初始化数据库迁移记录：%w", err)
+		}
+		// 官方素材相关表来自上游分表迁移体系；本地号段方案未纳入该体系，
+		// 这里幂等补建，确保官方素材/推荐功能的表存在（不写入迁移记录，不改本地号段）。
+		if err := tx.AutoMigrate(&model.OfficialAsset{}, &model.OfficialAssetImport{}, &model.OfficialAssetRecommendation{}); err != nil {
+			return fmt.Errorf("初始化官方素材表：%w", err)
 		}
 		if err := normalizeLegacyWorkbenchMigration(tx); err != nil {
 			return err

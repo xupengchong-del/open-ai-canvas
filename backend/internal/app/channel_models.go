@@ -25,6 +25,7 @@ type ChannelModelRequest struct {
 	Icon                             string                  `json:"icon"`
 	Capability                       string                  `json:"capability"`
 	Protocol                         string                  `json:"protocol"`
+	ProtocolRelease                  string                  `json:"protocolRelease,omitempty"`
 	BillingMode                      string                  `json:"billingMode"`
 	UnitPriceMicrocredits            int64                   `json:"unitPriceMicrocredits"`
 	InputTokenPriceMicrocredits      int64                   `json:"inputTokenPriceMicrocredits"`
@@ -46,7 +47,8 @@ const maxAdminChannelModelBatchDeleteCount = 100
 // ChannelModelPriceTierRequest 是系统渠道内某个规格的上游 SKU 与结算价格。
 // Resolution="*"、VideoSeconds=0 分别表示任意分辨率和任意时长。
 type ChannelModelPriceTierRequest struct {
-	CostPricing model.CreditCostPricing `json:"costPricing"`
+	ImagePricing *model.ImagePricing     `json:"imagePricing,omitempty"`
+	CostPricing  model.CreditCostPricing `json:"costPricing"`
 	// Selector 是 SKU 的规范匹配条件。支持 operation、quality、size、vquality、videoSeconds、imageCount、videoGenerateAudio；
 	// operation 可区分文生/图生/视频生，避免同一分辨率下错误复用价格。
 	Selector                         map[string]string `json:"selector"`
@@ -241,11 +243,20 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 		}
 		previousProviderModelKey = strings.TrimPrefix(strings.TrimSpace(item.ProviderModelKey), "models/")
 		previousProtocol = item.Protocol
+		// 上游协议版本契约：编辑时按当前/指定 release 绑定，空 digest 且协议未变时沿用旧绑定，
+		// 老模型（无绑定）则跟随当前 release。
+		if release, releaseErr := selectEditedModelRelease(s.protocolRegistry(), item, string(protocol), req.ProtocolRelease); releaseErr == nil {
+			item.ProtocolRelease = release.SHA256
+		}
 		item.PriceVersion++
 	} else {
 		item.ID, err = s.repo.NextPrefixedID("MODEL")
 		if err != nil {
 			return nil, err
+		}
+		// 新建模型绑定当前 selectable release（上游协议版本契约）。
+		if release, releaseErr := selectModelRelease(s.protocolRegistry(), string(protocol), req.ProtocolRelease, true); releaseErr == nil {
+			item.ProtocolRelease = release.SHA256
 		}
 	}
 	// 模型级上游键重命名时，与旧值相同的档位键属于“跟随模型默认”的隐式固化，必须级联跟随；

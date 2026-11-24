@@ -26,6 +26,30 @@ func TestReferenceTokensNormalizeAndFlagUnknownNumbers(t *testing.T) {
 	}
 }
 
+func TestRewriteReferenceTokensKeepsAssetIdentityWhenOrderChanges(t *testing.T) {
+	prompt := "@参考图1站在参考图 2前，参考图10保持不变。"
+	got := RewriteReferenceTokens(prompt, map[string]string{"参考图1": "参考图2", "参考图2": "参考图1"})
+	if got != "参考图2站在参考图1前，参考图10保持不变。" {
+		t.Fatalf("references must be rewritten once without collisions: %q", got)
+	}
+}
+
+func TestSegmentVideoPromptKeepsReferencesForSameNameAssets(t *testing.T) {
+	prompt := SegmentVideoPrompt(SegmentPromptInput{
+		References: []SegmentReference{
+			{Label: "参考图1", Kind: "character", Name: "同名", Detail: "白衣青年"},
+			{Label: "参考图2", Kind: "prop", Name: "同名", Detail: "红色钥匙"},
+			{Label: "参考图3", Kind: "scene", Name: "同名", Detail: "蓝色房间"},
+		},
+		Shots: []SegmentShot{{DurationMs: 3000, Action: "青年拿起钥匙"}},
+	})
+	for _, label := range []string{"参考图1", "参考图2", "参考图3"} {
+		if !strings.Contains(prompt, "同名（"+label+"）") {
+			t.Fatalf("same names must not overwrite reference labels: %s", prompt)
+		}
+	}
+}
+
 func TestParsePlanCoversEveryChapterInBatch(t *testing.T) {
 	batch := []Chapter{{Index: 1, Title: "一", Text: "甲"}, {Index: 2, Title: "二", Text: "乙"}, {Index: 3, Title: "三", Text: "丙"}}
 	raw := `{"episodes":[{"title":"开端","chapters":[1,"2",9],"synopsis":"开端剧情"}]}`
@@ -394,6 +418,20 @@ func TestCastImagePromptKeepsCastDescription(t *testing.T) {
 	}
 	if strings.Contains(prompt, "9:16") || strings.Contains(prompt, "竖屏") {
 		t.Fatalf("work frame rules leaked into the asset prompt: %s", prompt)
+	}
+}
+
+// 道具模板和场景一样存进作品设置：没存过用默认模板，存了按存的渲染，未知变量保存时拒绝。
+func TestCastImagePromptUsesPropTemplate(t *testing.T) {
+	if got := (AssetSettings{}).Normalized().PropPrompt; got != DefaultPropPrompt() {
+		t.Fatalf("empty prop prompt must fall back to the default template, got %q", got)
+	}
+	custom := AssetSettings{PropPrompt: "{{项目画风}}｜{{道具名称}}｜{{道具设定}}"}
+	if got := CastImagePrompt(custom, "prop", "短斧", "黑色斧刃", "国漫3D", ""); got != "国漫3D｜短斧｜黑色斧刃" {
+		t.Fatalf("prop prompt must render the saved template, got %q", got)
+	}
+	if problem := ValidateAssetPrompts(AssetSettings{PropPrompt: "{{道具名称}}{{角色名称}}"}.Normalized()); !strings.Contains(problem, "道具参考图提示词") || !strings.Contains(problem, "{{角色名称}}") {
+		t.Fatalf("unknown prop placeholder must be rejected, got %q", problem)
 	}
 }
 

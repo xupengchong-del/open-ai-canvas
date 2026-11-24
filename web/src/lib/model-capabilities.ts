@@ -1,5 +1,5 @@
 import type { TextThinkingConfig } from "./text-thinking";
-import type { ModelProtocol, ModelProtocolWorkflow } from "@/lib/model-protocols";
+import type { ModelProtocol, ModelProtocolWorkflow, VideoModelModes } from "@/lib/model-protocols";
 import { projectImageParameters, normalizeImageParameters, imageParameterRequest } from "./image-parameters";
 import type { ImageResolutionOption, ImageResolutionTier } from "@/lib/image-resolution-tiers";
 import { IMAGE_RATIOS, IMAGE_RESOLUTIONS, imagePresetForRatio } from "@/lib/image-size-presets";
@@ -143,6 +143,7 @@ export type VideoCapabilityConfig = {
     watermark: { supported: boolean; default: boolean };
     operations: string[];
     defaultOperation: string;
+    modeLimits?: VideoModelModes[string];
     /** 仅 kind=processing 的视频处理模型（如画质增强）配置；生成模型为空。 */
     processing?: VideoProcessingConfig;
     /** 批量视频应用层授权；默认关闭，不代表上游支持一次请求多输出。 */
@@ -160,6 +161,7 @@ export type VideoProcessingConfig = {
 /** 与后端一致：轮询上限 1 小时，按 RTF≈20 估算源视频默认不超过 180 秒。 */
 export const DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS = 180;
 export const VOLCENGINE_MEDIAKIT_ENHANCE_VIDEO_PROTOCOL = "volcengine-mediakit-enhance-video";
+export const MEDIAKIT_DEPTH_MAX_SOURCE_SECONDS = 600;
 /** 火山 MediaKit 画质增强（大模型版）支持的目标分辨率，按从低到高排列。 */
 export const VIDEO_ENHANCE_RESOLUTIONS = ["720p", "1080p", "2k", "4k"] as const;
 /** 目标档对应的短边像素，用于判断是否低于源视频。 */
@@ -764,4 +766,17 @@ export function videoDurationAllowed(profile: VideoCapabilityConfig, value: numb
     const max = profile.duration.max || min;
     const step = profile.duration.step || 1;
     return value >= min && value <= max && (value - min) % step === 0;
+}
+
+/** 按 operation 收窄视频能力声明到该模式实际支持的档位（上游共享逻辑）。 */
+export function videoProfileForOperation(profile: VideoCapabilityConfig, operation = profile.defaultOperation): VideoCapabilityConfig {
+    const limits = profile.modeLimits?.[operation];
+    if (!limits) return profile;
+    const ratios = profile.ratios.filter((ratio) => limits.ratios.includes(ratio));
+    return {
+        ...profile,
+        references: { ...profile.references, maxImages: Math.min(profile.references.maxImages, limits.maxImages) },
+        ratios,
+        defaultRatio: ratios.includes(profile.defaultRatio) ? profile.defaultRatio : (ratios[0] ?? ""),
+    };
 }

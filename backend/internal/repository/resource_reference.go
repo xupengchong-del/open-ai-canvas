@@ -36,13 +36,21 @@ type ResourceReferenceSnapshot struct {
 	Direct    []ResourceDirectReference
 }
 
+// AssetVersionsForAssets 按素材 ID 批量读取版本记录。
+// 上游画布资产守卫需要单独取版本列表，本地资源引用路径复用它，保持单一实现。
+func (r *Repository) AssetVersionsForAssets(assetIDs []string) ([]model.AssetVersion, error) {
+	var versions []model.AssetVersion
+	err := r.db.Where("asset_id IN ?", assetIDs).Find(&versions).Error
+	return versions, err
+}
+
 func (r *Repository) AssetResourceRecords(assetID string) ([]model.AssetVersion, []model.AssetRepresentation, error) {
 	return r.AssetsResourceRecords([]string{assetID})
 }
 
 func (r *Repository) AssetsResourceRecords(assetIDs []string) ([]model.AssetVersion, []model.AssetRepresentation, error) {
-	var versions []model.AssetVersion
-	if err := r.db.Where("asset_id IN ?", assetIDs).Find(&versions).Error; err != nil {
+	versions, err := r.AssetVersionsForAssets(assetIDs)
+	if err != nil {
 		return nil, nil, err
 	}
 	if len(versions) == 0 {

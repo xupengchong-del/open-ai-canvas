@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -106,18 +107,22 @@ type ParameterSupport struct {
 }
 
 type VideoCapabilityConfig struct {
-	References        VideoReferenceConfig   `json:"references"`
-	Duration          VideoDurationConfig    `json:"duration"`
-	DurationSupported *bool                  `json:"durationSupported,omitempty"`
-	Ratios            []string               `json:"ratios"`
-	DefaultRatio      string                 `json:"defaultRatio"`
-	Resolutions       []string               `json:"resolutions"`
-	DefaultResolution string                 `json:"defaultResolution"`
-	FixedScreenSpec   *VideoScreenSpecConfig `json:"fixedScreenSpec,omitempty"`
-	GenerateAudio     VideoBooleanConfig     `json:"generateAudio"`
-	Watermark         VideoBooleanConfig     `json:"watermark"`
-	Operations        []string               `json:"operations"`
-	DefaultOperation  string                 `json:"defaultOperation"`
+	providerID        string
+	providerModel     string
+	referenceContract *protocolcontract.VideoReferenceContract
+	References        VideoReferenceConfig                       `json:"references"`
+	Duration          VideoDurationConfig                        `json:"duration"`
+	DurationSupported *bool                                      `json:"durationSupported,omitempty"`
+	Ratios            []string                                   `json:"ratios"`
+	DefaultRatio      string                                     `json:"defaultRatio"`
+	Resolutions       []string                                   `json:"resolutions"`
+	DefaultResolution string                                     `json:"defaultResolution"`
+	FixedScreenSpec   *VideoScreenSpecConfig                     `json:"fixedScreenSpec,omitempty"`
+	GenerateAudio     VideoBooleanConfig                         `json:"generateAudio"`
+	Watermark         VideoBooleanConfig                         `json:"watermark"`
+	Operations        []string                                   `json:"operations"`
+	DefaultOperation  string                                     `json:"defaultOperation"`
+	ModeLimits        map[string]protocolcontract.VideoModeLimit `json:"modeLimits,omitempty"`
 	// Processing 只用于 kind=processing 的视频处理 provider（如画质增强），
 	// 生成类模型保持 nil。
 	Processing *VideoProcessingConfig `json:"processing,omitempty"`
@@ -139,8 +144,11 @@ const (
 	DefaultVideoProcessingMaxSourceSeconds = 180
 	// VideoProcessingOperationEnhance 是画质增强任务的 operation，前后端与价格档共用。
 	VideoProcessingOperationEnhance = "enhance"
+	VideoProcessingOperationDepth   = "depth"
+	MediaKitDepthMaxSourceSeconds   = 600
 	// VolcengineMediaKitEnhanceVideoProtocol 是官方插件 volcengine-mediakit 的画质增强 provider。
 	VolcengineMediaKitEnhanceVideoProtocol = "volcengine-mediakit-enhance-video"
+	VolcengineMediaKitVideoDepthProtocol   = "volcengine-mediakit-video-depth"
 )
 
 // VideoProcessingConfig 是视频处理工具的后台配置：帧率策略决定用户是否选择帧率，
@@ -188,6 +196,20 @@ type VideoDurationConfig struct {
 type VideoBooleanConfig struct {
 	Supported bool `json:"supported"`
 	Default   bool `json:"default"`
+}
+
+// maxImagesFor 按 operation 与协议元数据计算参考图上限，取声明值与契约限制的小者。
+func (video *VideoCapabilityConfig) maxImagesFor(operation string) int {
+	capacity := video.References.MaxImages
+	if limit, ok := video.ModeLimits[operation]; ok {
+		capacity = min(capacity, limit.MaxImages)
+	}
+	if video.referenceContract != nil {
+		if limit, limited := video.referenceContract.ImageLimit(video.providerModel, operation); limited {
+			return min(capacity, limit)
+		}
+	}
+	return capacity
 }
 
 func DecodeModelCapabilityConfig(raw string) (*ModelCapabilityConfig, error) {
@@ -261,26 +283,53 @@ func normalizedChannelModelCapability(channelModel *model.ChannelModel, registri
 	if channelModel == nil {
 		return nil, errors.New("渠道模型为空")
 	}
-	capability := normalizeCapability(channelModel.Capability)
-	if capability != "text" && capability != "image" && capability != "video" && capability != "audio" {
-		return nil, fmt.Errorf("不支持的渠道模型能力：%s", channelModel.Capability)
+	var registry *protocolcontract.Registry
+	if len(registries) > 0 && registries[0] != nil {
+		release, err := selectModelRelease(registries[0], string(channelModel.Protocol), channelModel.ProtocolRelease, false)
+		if err != nil {
+			return nil, err
+		}
+		registry = release.Registry
+	}
+	if channelModel.Capability == "audio" {
+		return nil, nil
 	}
 	config, err := DecodeModelCapabilityConfig(channelModel.CapabilityConfigJSON)
 	if err != nil {
 		return nil, fmt.Errorf("解析渠道模型能力配置失败：%w", err)
 	}
-	normalized, err := NormalizeModelCapabilityConfigForModel(capability, string(channelModel.Protocol), firstNonEmpty(channelModel.ProviderModelKey, channelModel.ModelKey), config, registries...)
-	if err != nil {
-		return nil, err
-	}
-	return normalized, nil
+	return NormalizeModelCapabilityConfigForModel(normalizeCapability(channelModel.Capability), string(channelModel.Protocol), firstNonEmpty(channelModel.ProviderModelKey, channelModel.ModelKey), config, registry)
 }
 
 func NormalizeModelCapabilityConfig(capability string, protocol string, input *ModelCapabilityConfig) (*ModelCapabilityConfig, error) {
 	return NormalizeModelCapabilityConfigForModel(capability, protocol, "", input)
 }
 
+// customMediaCapability 按 provider 配置构造能力声明（上游共享逻辑）。
+func customMediaCapability(mode string, config providerConfig, registry *protocolcontract.Registry) (*ModelCapabilityConfig, error) {
+	profile := config.CapabilityConfig
+	switch mode {
+	case "image":
+		if profile == nil || profile.Image == nil {
+			profile = &ModelCapabilityConfig{Image: DefaultImageCapabilityConfig(config.InterfaceType, config.Model)}
+		}
+	case "video":
+		if profile == nil || profile.Video == nil {
+			if config.InterfaceType != string(model.ChannelInterfaceAgnesVideo) {
+				return nil, nil
+			}
+			profile = DefaultModelCapabilityConfigForModel(config.InterfaceType, config.Model)
+		}
+	}
+	return NormalizeModelCapabilityConfigForModel(mode, config.InterfaceType, config.Model, profile, registry)
+}
+
 func NormalizeModelCapabilityConfigForModel(capability string, protocol string, modelName string, input *ModelCapabilityConfig, registries ...*protocolcontract.Registry) (*ModelCapabilityConfig, error) {
+	// 上游契约校验用单个 registry；本地支持 audio/priority 增强，这里取首个作为契约来源。
+	var registry *protocolcontract.Registry
+	if len(registries) > 0 {
+		registry = registries[0]
+	}
 	var transport *ReferenceMediaTransport
 	if input != nil {
 		var err error
@@ -334,30 +383,30 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if input == nil || input.Image == nil {
 			return nil, BadAuthRequest("请配置图片模型能力参数")
 		}
-		if input.Image.Parameters == nil {
-			normalizeLegacyImageResolutionConfig(protocol, input.Image)
+		image := *input.Image
+		image.Size.Values = slices.Clip(image.Size.Values)
+		if image.Parameters == nil {
+			normalizeLegacyImageResolutionConfig(protocol, &image)
 		}
-		if len(registries) > 0 && registries[0] != nil {
-			if adapter, ok := registries[0].Resolve(protocol); ok {
-				metadata := adapter.Metadata()
-				if err := resolveImageCapabilityParameters(input.Image, metadata.ImageParameters, modelName, metadata.Create); err != nil {
-					return nil, err
-				}
-			}
+		var adapter protocolcontract.Adapter
+		if registry != nil {
+			adapter, _ = registry.Resolve(protocol)
 		}
-		if input.Image.Parameters != nil {
-			if err := projectImageParameters(input.Image); err != nil {
+		if adapter != nil {
+			metadata := adapter.Metadata()
+			if err := resolveImageCapabilityParameters(&image, metadata.ImageParameters, modelName, metadata.Create); err != nil {
 				return nil, err
 			}
+		} else if err := protocolcontract.ValidateImageParameters(image.Parameters); err != nil {
+			return nil, BadAuthRequest(err.Error())
+		}
+		if image.Parameters != nil {
+			projectImageParameters(&image)
 		} else {
-			normalizeLegacyImageResolutionConfig(protocol, input.Image)
-			input.Image.ResolutionUsesQuality = strings.TrimSpace(protocol) == string(model.ChannelInterfaceGeminiImage)
+			image.ResolutionUsesQuality = strings.TrimSpace(protocol) == string(model.ChannelInterfaceGeminiImage)
+			fillMissingImageSizePresets(&image, protocol)
 		}
-		// 旧配置缺换算表时按声明的档位与比例补齐后再校验，保存即把旧线路归一化成当前形态。
-		if input.Image.Parameters == nil {
-			fillMissingImageSizePresets(input.Image, protocol)
-		}
-		value := &ModelCapabilityConfig{Version: 1, MediaTransport: transport, Priority: priority, Image: input.Image}
+		value := &ModelCapabilityConfig{Version: 1, MediaTransport: transport, Priority: priority, Image: &image}
 		if err := validateImageCapabilityConfig(value.Image); err != nil {
 			return nil, err
 		}
@@ -388,7 +437,20 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 			return nil, err
 		}
 	}
-	value := &ModelCapabilityConfig{Version: 1, MediaTransport: transport, Priority: priority, Video: video}
+	resolvedVideo := *video
+	resolvedVideo.ModeLimits = nil
+	resolvedVideo.providerID, resolvedVideo.providerModel = protocol, modelName
+	if registry != nil {
+		if adapter, ok := registry.Resolve(protocol); ok {
+			metadata := adapter.Metadata()
+			resolvedVideo.referenceContract = metadata.VideoReferences
+			resolvedVideo.ModeLimits = metadata.VideoModes[modelName]
+			if err := validateDeclaredVideoProfile(&resolvedVideo, metadata, modelName); err != nil {
+				return nil, err
+			}
+		}
+	}
+	value := &ModelCapabilityConfig{Version: 1, MediaTransport: transport, Priority: priority, Video: &resolvedVideo}
 	if err := validateVideoCapabilityConfig(value.Video); err != nil {
 		return nil, err
 	}
@@ -588,8 +650,10 @@ func CapabilitySpecFromModelCapabilityConfig(config *ModelCapabilityConfig, capa
 		}
 		if video.Processing != nil {
 			// 处理类模型的 videoSeconds 是服务端测得的源时长，fpsBand 只用于价格档选择。
-			spec.Options["videoSeconds"] = numericRange(1, float64(videoProcessingMaxSourceSeconds(video.Processing)), 1)
-			spec.Options["fpsBand"] = anyValues(videoProcessingFPSBands)
+			spec.Options["videoSeconds"] = numericRange(1, float64(videoProcessingMaxSourceSeconds(video)), 1)
+			if video.DefaultOperation != VideoProcessingOperationDepth {
+				spec.Options["fpsBand"] = anyValues(videoProcessingFPSBands)
+			}
 		}
 		if video.GenerateAudio.Supported {
 			spec.Options["videoGenerateAudio"] = boolValues(true)
@@ -659,4 +723,55 @@ func addInputConstraint(inputs map[string]InputConstraint, name string, min int,
 		return
 	}
 	inputs[name] = InputConstraint{Min: min, Max: max}
+}
+func validateDeclaredVideoProfile(video *VideoCapabilityConfig, metadata protocolcontract.Metadata, modelName string) error {
+	if len(metadata.VideoModes) == 0 {
+		return nil
+	}
+	if len(video.ModeLimits) == 0 {
+		return BadAuthRequest("当前插件版本未声明视频型号 " + modelName)
+	}
+	for _, operation := range video.Operations {
+		if _, ok := video.ModeLimits[operation]; !ok {
+			return BadAuthRequest("当前插件版本的该型号不支持生成模式 " + operation)
+		}
+	}
+	allowedRatios := make(map[string]bool)
+	rawAudioAllowed := false
+	for _, mode := range video.ModeLimits {
+		for _, ratio := range mode.Ratios {
+			allowedRatios[ratio] = true
+		}
+		rawAudioAllowed = rawAudioAllowed || mode.InputRoles == nil || containsCapabilityString(mode.InputRoles, "reference_audio")
+	}
+	if !rawAudioAllowed && video.References.MaxAudios > 0 {
+		return BadAuthRequest("当前插件版本的该型号不接受音频文件引用")
+	}
+	for _, ratio := range video.Ratios {
+		if !allowedRatios[ratio] {
+			return BadAuthRequest("当前插件版本的该型号不支持画面比例 " + ratio)
+		}
+	}
+	output, ok := metadata.VideoOutputs[modelName]
+	if !ok {
+		return nil
+	}
+	if output.GenerateAudio != nil && !*output.GenerateAudio && video.GenerateAudio.Supported {
+		return BadAuthRequest("当前插件版本的该型号不提供生成声音开关")
+	}
+	for _, resolution := range video.Resolutions {
+		if !containsCapabilityString(output.Resolutions, resolution) {
+			return BadAuthRequest("当前插件版本的该型号不支持分辨率 " + resolution)
+		}
+	}
+	seconds := video.Duration.Values
+	if video.Duration.Selection == "range" {
+		seconds = []int{video.Duration.Min, video.Duration.Max}
+	}
+	for _, value := range seconds {
+		if value < output.MinSeconds || value > output.MaxSeconds {
+			return BadAuthRequest(fmt.Sprintf("当前插件版本的该型号支持 %d–%d 秒", output.MinSeconds, output.MaxSeconds))
+		}
+	}
+	return nil
 }

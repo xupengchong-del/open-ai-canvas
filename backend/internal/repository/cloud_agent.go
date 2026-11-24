@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +20,19 @@ import (
 func (r *Repository) CloudAgentPiSession(userID, runID string) (*model.CloudAgentPiSession, error) {
 	var session model.CloudAgentPiSession
 	err := r.db.First(&session, "run_id = ? AND user_id = ?", runID, userID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		payload, archiveErr := r.cloudAgentHistoryArchive(userID, runID)
+		if archiveErr != nil {
+			if cloudAgentHistoryArchiveUnavailable(archiveErr) {
+				return &session, err
+			}
+			return &session, archiveErr
+		}
+		if payload.Session == nil {
+			return &session, gorm.ErrRecordNotFound
+		}
+		return payload.Session, nil
+	}
 	return &session, err
 }
 
@@ -27,40 +42,66 @@ func (r *Repository) SaveCloudAgentPiSession(session *model.CloudAgentPiSession,
 	if session == nil || session.RunID == "" || session.UserID == "" {
 		return fmt.Errorf("invalid Agent session identity")
 	}
-	if expectedRevision == 0 {
-		session.Revision = 1
-		return r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(session).Error
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		if err := repo.beginAgentStorageWrite(session.UserID); err != nil {
+			return err
+		}
+		var previousBytes int64
+		var result *gorm.DB
+		if expectedRevision == 0 {
+			if err := repo.requireAgentHistoryNotCleared(session.UserID, session.RunID); err != nil {
+				return err
+			}
+			session.Revision = 1
+			result = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(session)
+		} else {
+			var previous model.CloudAgentPiSession
+			if err := tx.First(&previous, "run_id = ? AND user_id = ? AND revision = ?", session.RunID, session.UserID, expectedRevision).Error; err != nil {
+				return err
+			}
+			previousBytes = int64(len(previous.SessionJSONL))
+			result = tx.Model(&model.CloudAgentPiSession{}).
+				Where("run_id = ? AND user_id = ? AND revision = ?", session.RunID, session.UserID, expectedRevision).
+				Updates(map[string]any{"session_jsonl": session.SessionJSONL, "revision": expectedRevision + 1, "updated_at": time.Now()})
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return repo.changeAgentStoredBytes(session.UserID, int64(len(session.SessionJSONL))-previousBytes)
+	})
+	if err == nil {
+		session.Revision = expectedRevision + 1
 	}
-	result := r.db.Model(&model.CloudAgentPiSession{}).
-		Where("run_id = ? AND user_id = ? AND revision = ?", session.RunID, session.UserID, expectedRevision).
-		Updates(map[string]any{"session_jsonl": session.SessionJSONL, "revision": expectedRevision + 1, "updated_at": time.Now()})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return gorm.ErrRecordNotFound
-	}
-	session.Revision = expectedRevision + 1
-	return nil
+	return err
 }
 
 func (r *Repository) EnsureCloudAgent(run *model.CloudAgentExecution) error {
-	if run.ConversationID == "" {
-		run.ConversationID = run.ID
-		if run.ParentID != "" {
-			var parent model.CloudAgentExecution
-			if err := r.db.Select("id", "conversation_id", "title").First(&parent, "id = ? AND user_id = ?", run.ParentID, run.UserID).Error; err != nil {
-				return err
-			}
-			if parent.ConversationID != "" {
-				run.ConversationID = parent.ConversationID
-			} else {
-				run.ConversationID = parent.ID
-			}
-			run.Title = parent.Title
-		}
-	}
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		if err := repo.beginAgentStorageWrite(run.UserID); err != nil {
+			return err
+		}
+		if err := repo.requireAgentHistoryNotCleared(run.UserID, run.ID); err != nil {
+			return err
+		}
+		if run.ConversationID == "" {
+			run.ConversationID = run.ID
+			if run.ParentID != "" {
+				var parent model.CloudAgentExecution
+				if err := tx.Select("id", "conversation_id", "title").First(&parent, "id = ? AND user_id = ?", run.ParentID, run.UserID).Error; err != nil {
+					return err
+				}
+				run.ConversationID = parent.ID
+				if parent.ConversationID != "" {
+					run.ConversationID = parent.ConversationID
+				}
+				run.Title = parent.Title
+			}
+		}
 		// GORM saves associations even when the parent INSERT loses its conflict.
 		// A late initializer must not reinsert transcript rows removed by a newer
 		// checkpoint, or append journal rows outside the revision/CAS transition.
@@ -69,6 +110,22 @@ func (r *Repository) EnsureCloudAgent(run *model.CloudAgentExecution) error {
 			return created.Error
 		}
 		if created.RowsAffected == 1 {
+			bytes := int64(len(run.StateJSON))
+			for _, event := range run.Journal {
+				if event.UserID != run.UserID || event.RunID != run.ID {
+					return gorm.ErrInvalidData
+				}
+				bytes += int64(len(event.EventJSON))
+			}
+			for _, message := range run.Transcript {
+				if message.UserID != run.UserID || message.RunID != run.ID {
+					return gorm.ErrInvalidData
+				}
+				bytes += int64(len(message.MessageJSON))
+			}
+			if err := repo.changeAgentStoredBytes(run.UserID, bytes); err != nil {
+				return err
+			}
 			if len(run.Journal) > 0 {
 				if err := tx.Create(&run.Journal).Error; err != nil {
 					return err
@@ -114,6 +171,22 @@ func (r *Repository) hydrateCloudAgent(run *model.CloudAgentExecution) error {
 	if run.CheckpointVersion < 2 {
 		return nil
 	}
+	if run.HistoryCompacted {
+		payload, err := r.cloudAgentHistoryArchive(run.UserID, run.ID)
+		if err != nil {
+			return err
+		}
+		events := payload.Events
+		if len(events) > CloudAgentJournalWindow {
+			events = events[len(events)-CloudAgentJournalWindow:]
+		}
+		run.Journal = append([]model.CloudAgentEventRecord(nil), events...)
+		run.Transcript = append([]model.CloudAgentMessageRecord(nil), payload.Messages...)
+		if payload.StateJSON != "" {
+			run.StateJSON = payload.StateJSON
+		}
+		return nil
+	}
 	// 只取最近一窗，再翻回升序：与 EventCount 的尾部对齐（不变量见 app 侧解码）。
 	window := []model.CloudAgentEventRecord{}
 	if err := r.db.Where("run_id = ? AND user_id = ?", run.ID, run.UserID).
@@ -139,7 +212,26 @@ func (r *Repository) CloudAgentEventRecords(userID, runID string, afterSeq, limi
 	records := []model.CloudAgentEventRecord{}
 	err := r.db.Where("run_id = ? AND user_id = ? AND sequence > ?", runID, userID, afterSeq).
 		Order("sequence ASC").Limit(limit).Find(&records).Error
-	return records, err
+	if err != nil || len(records) > 0 {
+		return records, err
+	}
+	payload, archiveErr := r.cloudAgentHistoryArchive(userID, runID)
+	if cloudAgentHistoryArchiveUnavailable(archiveErr) {
+		return records, nil
+	}
+	if archiveErr != nil {
+		return nil, archiveErr
+	}
+	for _, event := range payload.Events {
+		if event.Sequence <= afterSeq {
+			continue
+		}
+		records = append(records, event)
+		if len(records) == limit {
+			break
+		}
+	}
+	return records, nil
 }
 
 // CloudAgentEventRecordsBefore 取 seq < beforeSeq 的**最近** limit 条（升序返回），
@@ -154,6 +246,21 @@ func (r *Repository) CloudAgentEventRecordsBefore(userID, runID string, beforeSe
 	if err != nil {
 		return nil, err
 	}
+	if len(records) == 0 {
+		payload, archiveErr := r.cloudAgentHistoryArchive(userID, runID)
+		if cloudAgentHistoryArchiveUnavailable(archiveErr) {
+			return records, nil
+		}
+		if archiveErr != nil {
+			return nil, archiveErr
+		}
+		for index := len(payload.Events) - 1; index >= 0 && len(records) < limit; index-- {
+			event := payload.Events[index]
+			if event.Sequence < beforeSeq {
+				records = append(records, event)
+			}
+		}
+	}
 	for left, right := 0, len(records)-1; left < right; left, right = left+1, right-1 {
 		records[left], records[right] = records[right], records[left]
 	}
@@ -165,7 +272,17 @@ func (r *Repository) CloudAgentEventRecordCount(userID, runID string) (int64, er
 	var count int64
 	err := r.db.Model(&model.CloudAgentEventRecord{}).
 		Where("run_id = ? AND user_id = ?", runID, userID).Count(&count).Error
-	return count, err
+	if err != nil || count > 0 {
+		return count, err
+	}
+	payload, archiveErr := r.cloudAgentHistoryArchive(userID, runID)
+	if cloudAgentHistoryArchiveUnavailable(archiveErr) {
+		return count, nil
+	}
+	if archiveErr != nil {
+		return 0, archiveErr
+	}
+	return int64(len(payload.Events)), nil
 }
 
 func (r *Repository) CloudAgentForActiveTask(userID, taskID string) (*model.CloudAgentExecution, error) {
@@ -191,7 +308,7 @@ func (r *Repository) CloudAgentIDsWaitingApprovalForCanvas(userID, canvasID stri
 
 func (r *Repository) CloudAgentRoots() ([]model.Task, error) {
 	var tasks []model.Task
-	err := r.db.Where("operation = ? AND id NOT IN (SELECT id FROM cloud_agent_executions)", "cloud_agent").Order("created_at").Limit(50).Find(&tasks).Error
+	err := r.db.Where("operation = ? AND agent_execution_ready = false AND id NOT IN (SELECT id FROM cloud_agent_executions)", "cloud_agent").Order("created_at").Limit(50).Find(&tasks).Error
 	return tasks, err
 }
 
@@ -246,15 +363,45 @@ func (r *Repository) RecentCloudAgentEventsForUser(userID string, runLimit int) 
 		return nil, nil
 	}
 	var records []model.CloudAgentEventRecord
-	err := r.db.Where("user_id = ? AND run_id IN ?", userID, runIDs).
-		Order("created_at, sequence").
-		Find(&records).Error
-	return records, err
+	for _, runID := range runIDs {
+		var runRecords []model.CloudAgentEventRecord
+		if err := r.db.Where("user_id = ? AND run_id = ?", userID, runID).
+			Order("created_at, sequence").Find(&runRecords).Error; err != nil {
+			return nil, err
+		}
+		if len(runRecords) == 0 {
+			payload, archiveErr := r.cloudAgentHistoryArchive(userID, runID)
+			if cloudAgentHistoryArchiveUnavailable(archiveErr) {
+				continue
+			}
+			if archiveErr != nil {
+				return nil, archiveErr
+			}
+			runRecords = payload.Events
+		}
+		records = append(records, runRecords...)
+	}
+	sort.SliceStable(records, func(left, right int) bool {
+		if records[left].CreatedAt.Equal(records[right].CreatedAt) {
+			if records[left].RunID == records[right].RunID {
+				return records[left].Sequence < records[right].Sequence
+			}
+			return records[left].RunID < records[right].RunID
+		}
+		return records[left].CreatedAt.Before(records[right].CreatedAt)
+	})
+	return records, nil
 }
 
 // Lock before reading: checkpoints, canvas writes and task reservations commit together.
 func (r *Repository) MutateCloudAgent(userID, id string, revision int64, fn func(*model.CloudAgentExecution, *Repository) error) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		// Keep storage -> execution as the common lock order, including nested
+		// session/undo writes, so different runs of one user cannot deadlock.
+		if err := repo.beginAgentStorageWrite(userID); err != nil {
+			return err
+		}
 		q := tx.Model(&model.CloudAgentExecution{}).Where("id = ? AND user_id = ? AND revision = ?", id, userID, revision).UpdateColumn("revision", gorm.Expr("revision + 1"))
 		if q.Error != nil {
 			return q.Error
@@ -267,6 +414,7 @@ func (r *Repository) MutateCloudAgent(userID, id string, revision int64, fn func
 			return err
 		}
 		previousEvents := run.EventCount
+		previousBytes := int64(len(run.StateJSON))
 		previousEventBodies := make(map[int]string, len(run.Journal))
 		for _, event := range run.Journal {
 			previousEventBodies[event.Sequence] = event.EventJSON
@@ -274,8 +422,30 @@ func (r *Repository) MutateCloudAgent(userID, id string, revision int64, fn func
 		previousMessages := make(map[string]string, len(run.Transcript))
 		for _, message := range run.Transcript {
 			previousMessages[fmt.Sprintf("%s:%d", message.Kind, message.Sequence)] = message.MessageJSON
+			previousBytes += int64(len(message.MessageJSON))
 		}
 		if err = fn(run, New(tx)); err != nil {
+			return err
+		}
+		if run.UserID != userID || run.ID != id {
+			return gorm.ErrInvalidData
+		}
+		currentBytes := int64(len(run.StateJSON))
+		for _, event := range run.Journal {
+			if event.UserID != userID || event.RunID != id {
+				return gorm.ErrInvalidData
+			}
+			if event.Sequence > previousEvents {
+				currentBytes += int64(len(event.EventJSON))
+			}
+		}
+		for _, message := range run.Transcript {
+			if message.UserID != userID || message.RunID != id {
+				return gorm.ErrInvalidData
+			}
+			currentBytes += int64(len(message.MessageJSON))
+		}
+		if err := repo.changeAgentStoredBytes(userID, currentBytes-previousBytes); err != nil {
 			return err
 		}
 		if run.EventCount < previousEvents {
@@ -403,13 +573,39 @@ func (r *Repository) CreateCloudAgentCanvasMutation(mutation *model.CloudAgentCa
 	if err := canonicalizeCanvasUndoSnapshot(mutation); err != nil {
 		return err
 	}
-	return r.db.Create(mutation).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		if err := repo.beginAgentStorageWrite(mutation.UserID); err != nil {
+			return err
+		}
+		if err := repo.requireAgentHistoryNotCleared(mutation.UserID, mutation.RunID); err != nil {
+			return err
+		}
+		if err := repo.changeAgentStoredBytes(mutation.UserID, int64(len(mutation.BeforeJSON))); err != nil {
+			return err
+		}
+		return tx.Create(mutation).Error
+	})
 }
 
 func (r *Repository) LatestCloudAgentCanvasMutation(userID, runID string) (*model.CloudAgentCanvasMutation, error) {
 	var mutation model.CloudAgentCanvasMutation
 	err := r.db.Where("user_id = ? AND run_id = ?", userID, runID).
 		Order("created_at DESC, id DESC").First(&mutation).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		payload, archiveErr := r.cloudAgentHistoryArchive(userID, runID)
+		if archiveErr != nil {
+			if cloudAgentHistoryArchiveUnavailable(archiveErr) {
+				return &mutation, err
+			}
+			return &mutation, archiveErr
+		}
+		if len(payload.Mutations) == 0 {
+			return &mutation, err
+		}
+		returnMutation := payload.Mutations[len(payload.Mutations)-1].model()
+		return &returnMutation, nil
+	}
 	return &mutation, err
 }
 
@@ -436,7 +632,7 @@ func (r *Repository) MarkCloudAgentFailed(userID, id string, revision int64, mes
 		detail = message[0]
 	}
 	result := r.db.Model(&model.CloudAgentExecution{}).
-		Where("id = ? AND user_id = ? AND revision = ? AND status IN ?", id, userID, revision, []string{"queued", "running"}).
+		Where("id = ? AND user_id = ? AND revision = ? AND status IN ?", id, userID, revision, []string{"queued", "running", "waiting_approval", "waiting_user"}).
 		Updates(map[string]any{"status": "failed", "cleanup_pending": true, "failure_message": detail, "revision": gorm.Expr("revision + 1")})
 	if result.Error != nil {
 		return result.Error
@@ -452,7 +648,7 @@ func (r *Repository) MarkCloudAgentFailed(userID, id string, revision int64, mes
 // scheduler when the orchestration blob can no longer be decoded.
 func (r *Repository) MarkCloudAgentCancelled(userID, id string, revision int64) error {
 	result := r.db.Model(&model.CloudAgentExecution{}).
-		Where("id = ? AND user_id = ? AND revision = ? AND status IN ?", id, userID, revision, []string{"queued", "running", "waiting_approval"}).
+		Where("id = ? AND user_id = ? AND revision = ? AND status IN ?", id, userID, revision, []string{"queued", "running", "waiting_approval", "waiting_user"}).
 		Updates(map[string]any{"status": "cancelled", "cleanup_pending": true, "revision": gorm.Expr("revision + 1")})
 	if result.Error != nil {
 		return result.Error

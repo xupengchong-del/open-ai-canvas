@@ -15,13 +15,14 @@ import (
 
 // Models 是应用持久化表的唯一清单，服务启动和跨数据库迁移必须共用它。
 func Models() []any {
-	return []any{
+	return append(teamModels(), []any{
 		&model.ChannelWebsite{},
 		&model.ChannelCatalogSnapshot{},
 		&model.ChannelProtocolSelection{},
 		&model.CloudAgentExecution{},
 		&model.UploadReservation{},
 		&model.CloudAgentPiSession{},
+		&model.AgentStorageUsage{},
 		&model.CloudAgentEventRecord{},
 		&model.CloudAgentMessageRecord{},
 		&model.CloudAgentCanvasMutation{},
@@ -36,6 +37,8 @@ func Models() []any {
 		&model.AgentMemoryDocumentRevision{},
 		&model.MCPServerTemplate{},
 		&model.MCPConnection{},
+		&model.MCPConnectionGrant{},
+		&model.MCPStorageUsage{},
 		&model.MCPToolExecution{},
 		&model.User{},
 		&model.UserGroup{},
@@ -179,7 +182,7 @@ func Models() []any {
 		&model.DramaSegment{},
 		&model.DramaJob{},
 		&model.EcommerceRound{},
-	}
+	}...)
 }
 
 func migrateSchemaV1(db *gorm.DB) error {

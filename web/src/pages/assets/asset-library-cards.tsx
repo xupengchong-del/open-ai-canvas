@@ -47,6 +47,8 @@ export function AssetCard({
     selectionMode = false,
     onSelect,
     onOpen,
+    onRename,
+    onRecommend,
     onEdit,
     onCopy,
     onDownload,
@@ -65,6 +67,8 @@ export function AssetCard({
     selectionMode?: boolean;
     onSelect: (selected: boolean, range?: boolean) => void;
     onOpen: () => void;
+    onRename?: () => void;
+    onRecommend?: (asset: LibraryAsset) => void;
     onEdit: () => void;
     onCopy: (asset: LibraryAsset) => void;
     onDownload: (asset: LibraryAsset) => void;
@@ -82,7 +86,11 @@ export function AssetCard({
     const menuItems: MenuProps["items"] = isTrash
         ? [{ key: "restore", icon: <RotateCcw className="size-3.5" />, label: "还原到素材库", onClick: onRestore }, { type: "divider" as const }, { key: "delete", danger: true, icon: <Trash2 className="size-3.5" />, label: "彻底删除", onClick: onDelete }]
         : [
+              ...(onRename ? [{ key: "rename", icon: <PencilLine className="size-3.5" />, label: "修改名称", onClick: onRename }] : []),
               ...(asset.kind === "text" || asset.kind === "image" ? [{ key: "edit", icon: <PencilLine className="size-3.5" />, label: "编辑", onClick: onEdit }] : []),
+              ...(onRecommend && (asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" || asset.kind === "entity")
+                  ? [{ key: "recommend", icon: <PencilLine className="size-3.5" />, label: "推荐为官方素材", onClick: () => onRecommend(asset) }]
+                  : []),
               ...(asset.kind === "text" ? [{ key: "copy", icon: <Copy className="size-3.5" />, label: "复制文本", onClick: () => void onCopy(asset) }] : []),
               ...(asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" || asset.kind === "model" ? [{ key: "download", icon: <Download className="size-3.5" />, label: "下载", onClick: () => onDownload(asset) }] : []),
               { key: "move", icon: <FolderOpen className="size-3.5" />, label: "移动到分类", children: folderOptions.map((folder) => ({ key: folder.value || "uncategorized", label: folder.label, onClick: () => onMoveToFolder(folder.value) })) },

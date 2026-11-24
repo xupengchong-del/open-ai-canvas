@@ -3,6 +3,7 @@ package canvas
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -239,6 +240,63 @@ func (s *Service) UserCanvasProject(userID string, id string) (json.RawMessage, 
 	return canvasProjectPayload(*project)
 }
 
+// UpsertAssetAs 是带操作者身份的素材写入：团队空间按 actorID/manageAll 校验归档权限。
+// 保留本地导出计数排序优化，同时接入上游团队写入路径。
+func (s *Service) UpsertAssetAs(userID string, raw json.RawMessage, actorID string, manageAll bool) (UserDataSummary, error) {
+	asset, err := AssetFromJSON(userID, raw)
+	if err != nil {
+		return UserDataSummary{}, err
+	}
+	err = s.host.WithStorageLock(func() error {
+		asset.CreatedBy = actorID
+		if asset.FolderID != "" {
+			if _, err := s.repo.AssetFolderForUser(userID, asset.FolderID); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return kernel.BadAuthRequest("素材分类不存在")
+				}
+				return err
+			}
+		}
+		existing, existingErr := s.repo.AssetForUser(userID, asset.ID)
+		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+			return existingErr
+		}
+		if existing != nil && isExportCountOnlyRewrite(existing.PayloadJSON, asset.PayloadJSON) {
+			// 导出计数只是标记：素材库按 updated_at 排序，这类写入不能把素材顶到列表最前。
+			asset.UpdatedAt = existing.UpdatedAt
+		}
+		if !manageAll && existing != nil && existing.CreatedBy != actorID && (existing.Status == model.AssetVersionStatusArchived) != (asset.Status == model.AssetVersionStatusArchived) {
+			return kernel.Forbidden("仅素材贡献者或空间所有者可以归档和恢复此素材")
+		}
+		if asset.Category == model.AssetCategoryArk && (existing == nil || existing.Category != model.AssetCategoryArk) {
+			return kernel.BadAuthRequest("方舟认证分类由认证结果自动设置，不能手动选择")
+		}
+		if existing != nil && existing.PayloadJSON != asset.PayloadJSON {
+			if err := s.ValidateAssetCanvasReferences(userID, asset); err != nil {
+				return err
+			}
+		}
+		existingBytes := int64(0)
+		if existing != nil {
+			existingBytes = int64(len([]byte(existing.PayloadJSON)))
+		}
+		if err := s.host.StructuredQuota(userID, "asset", errors.Is(existingErr, gorm.ErrRecordNotFound), int64(len(raw))-existingBytes); err != nil {
+			return err
+		}
+		if err := s.repo.UpsertAsset(&asset); err != nil {
+			return err
+		}
+		if existingErr != nil {
+			s.host.RecordActivity(userID, "asset", 1)
+		}
+		return nil
+	})
+	if err != nil {
+		return UserDataSummary{}, err
+	}
+	return UserDataSummary{ID: asset.ID, FolderID: asset.FolderID, Kind: asset.Kind, Category: string(asset.Category), Status: string(asset.Status), Title: asset.Title, CreatedAt: asset.CreatedAt, UpdatedAt: asset.UpdatedAt}, nil
+}
+
 func (s *Service) UpsertUserCanvasProject(userID string, raw json.RawMessage) (UserDataSummary, error) {
 	return s.upsertUserCanvasProjectWithHistory(userID, raw, "automatic")
 }
@@ -341,7 +399,7 @@ func (s *Service) ApplyUserCanvasOperations(userID, canvasID string, req CanvasO
 				}
 				for field, value := range create.Patch {
 					if !allowedCanvasOperationField(field) {
-						return kernel.BadAuthRequest("不支持的新画布字段")
+						return kernel.BadAuthRequest(fmt.Sprintf("不支持的新画布字段: 字段 %q", field))
 					}
 					payload[field] = append(json.RawMessage(nil), value...)
 				}
@@ -379,7 +437,11 @@ func (s *Service) ApplyUserCanvasOperations(userID, canvasID string, req CanvasO
 						return err
 					}
 				}
-				if err := New(tx, nil).ValidateCanvasMediaAssets(userID, raw); err != nil {
+				guard := New(tx, nil)
+				if err := guard.validateNewWorkspaceBindings(userID, existing, raw); err != nil {
+					return err
+				}
+				if err := guard.ValidateCanvasMediaAssets(userID, raw); err != nil {
 					return err
 				}
 			}

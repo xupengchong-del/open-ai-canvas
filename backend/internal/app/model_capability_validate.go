@@ -196,15 +196,19 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if value.BatchGeneration.MaxItems < 0 || value.BatchGeneration.MaxItems > 1000 {
 		return BadAuthRequest("批量视频单批最多条数必须在 0-1000 之间")
 	}
-	if value.BatchGeneration.Priority <= 0 || value.BatchGeneration.Priority > 10000 {
-		return BadAuthRequest("批量视频模型优先级必须在 1-10000 之间")
+	// 0 表示未配置批量优先级（如视频处理/depth 模型），由 normalizeModelPriority 给默认值。
+	if value.BatchGeneration.Priority < 0 || value.BatchGeneration.Priority > 10000 {
+		return BadAuthRequest("批量视频模型优先级必须在 0-10000 之间")
 	}
-	return validateVideoProcessingConfig(value.Processing)
+	return validateVideoProcessingConfig(value.Processing, value.DefaultOperation)
 }
 
-func validateVideoProcessingConfig(value *VideoProcessingConfig) error {
+func validateVideoProcessingConfig(value *VideoProcessingConfig, operation string) error {
 	if value == nil {
 		return nil
+	}
+	if operation == VideoProcessingOperationDepth && value.FPSPolicy != VideoProcessingFPSKeepSource {
+		return BadAuthRequest("相对深度视频不支持选择输出帧率")
 	}
 	switch value.FPSPolicy {
 	case VideoProcessingFPSKeepSource:
@@ -225,18 +229,28 @@ func validateVideoProcessingConfig(value *VideoProcessingConfig) error {
 	default:
 		return BadAuthRequest("视频处理帧率策略仅支持保持原帧率或用户选择")
 	}
-	if value.MaxSourceSeconds < 0 || value.MaxSourceSeconds > DefaultVideoProcessingMaxSourceSeconds {
-		return BadAuthRequest(fmt.Sprintf("源视频时长上限必须在 1-%d 秒之间（任务轮询上限为 1 小时）", DefaultVideoProcessingMaxSourceSeconds))
+	maxSeconds := DefaultVideoProcessingMaxSourceSeconds
+	if operation == VideoProcessingOperationDepth {
+		maxSeconds = MediaKitDepthMaxSourceSeconds
+	}
+	if value.MaxSourceSeconds < 0 || value.MaxSourceSeconds > maxSeconds {
+		return BadAuthRequest(fmt.Sprintf("源视频时长上限必须在 1-%d 秒之间", maxSeconds))
 	}
 	return nil
 }
 
 // videoProcessingMaxSourceSeconds 返回生效的源视频时长上限。
-func videoProcessingMaxSourceSeconds(value *VideoProcessingConfig) int {
-	if value == nil || value.MaxSourceSeconds <= 0 {
+func videoProcessingMaxSourceSeconds(profile *VideoCapabilityConfig) int {
+	if profile == nil {
 		return DefaultVideoProcessingMaxSourceSeconds
 	}
-	return value.MaxSourceSeconds
+	if profile.Processing != nil && profile.Processing.MaxSourceSeconds > 0 {
+		return profile.Processing.MaxSourceSeconds
+	}
+	if profile.DefaultOperation == VideoProcessingOperationDepth {
+		return MediaKitDepthMaxSourceSeconds
+	}
+	return DefaultVideoProcessingMaxSourceSeconds
 }
 
 // videoFPSBand 把帧率映射到火山 MediaKit 的计费档位：≤30、≤60、≤120。
@@ -286,7 +300,7 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 	}
 	var taskInput canvasGenerationInput
 	if err := json.Unmarshal(encoded, &taskInput); err != nil {
-		return nil
+		return BadAuthRequest("任务输入格式无效")
 	}
 	if taskInput.Mode == "text" {
 		if err := ValidateThinkingLevelRequest(taskInput.TextOptions.ThinkingLevel); err != nil {
