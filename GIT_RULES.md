@@ -97,10 +97,12 @@ export ALL_PROXY=socks5://127.0.0.1:7890
 ./update-upstream.sh
 ```
 
-它的安全保障（**100% 保护本地修改**）：
+它的安全保障：
 1. **自动先建备份**：每次拉取前自动在本地创建时间戳备份分支（如 `backup/local_daily_20261013_132544`），随时可一键撤销；
 2. **防覆盖保护**：工作区有未提交代码时自动拦截，不会丢失任何未存内容；
-3. **安全合并**：将官方最新更新合并入 `local/daily`，你的所有定制功能完整保留。
+3. **尝试合并**：将官方更新合并入 `local/daily`。注意：**小版本无冲突时本地定制自动保留；
+   大版本有冲突时会停下来等人工解决，此时按下面第 C 节的 SOP 做代码级融合**，
+   切勿把"100% 保护"理解为冲突时会自动取舍。
 
 ### B. 后台自动同步
 
@@ -121,6 +123,59 @@ export ALL_PROXY=socks5://127.0.0.1:7890
 ```bash
 tail -30 ~/.local/share/yingce-sync/sync.log
 ```
+
+### C. 上游大版本融合 SOP（代码级，保留本地定制）
+
+当上游不是小补丁而是大版本（几十上百提交、含架构重构）时，`update-upstream.sh`
+只能做到"建备份 + merge"，**冲突必须人工逐个做代码级融合**。以下命令和原则来自
+v1.8.7.2 合并实战（commit `c52c483c`），照做可大幅缩短时间。
+
+**核心原则：90% 以本地为主。只有"编译/类型检查强制依赖"时才用上游实现，
+并且移植上游逻辑时必须把本地增强（Priority/BatchGeneration/费用逻辑等）保留下来。**
+
+1. **备份 + 分析**（必做）
+   ```bash
+   git branch backup/pre-upstream-$(date +%Y%m%d_%H%M%S) local/daily
+   git fetch upstream
+   echo "上游领先: $(git rev-list --count local/daily..upstream/main)"
+   git merge upstream/main --no-commit --no-ff   # 看真实冲突
+   git diff --name-only --diff-filter=U          # 冲突文件清单
+   ```
+
+2. **冲突基线**：冲突文件先全部取本地版保住定制，再编译
+   ```bash
+   # 用 Python 批量 checkout --ours（for 循环在本机 shell 偶发失效）
+   python3 - <<'PY'
+   import subprocess
+   for f in subprocess.check_output(['git','diff','--name-only','--diff-filter=U'],text=True).split():
+       subprocess.run(['git','checkout','--ours','--',f]); subprocess.run(['git','add','--',f])
+   PY
+   cd backend && go build ./...    # 编译错误 = 上游新代码需要的本地符号清单
+   ```
+
+3. **编译驱动逐个补符号**（关键手法）：每轮 `go build`，缺哪个符号就从上游版
+   （`git show MERGE_HEAD:<file>`）提取定义补进本地版，**补的时候保留本地增强**。
+   典型：`FeatureTeams`、`ImagePricing`、`ProtocolRelease`、`AssetVersionsForAssets`、
+   `UpsertAssetAs`（补上游团队参数但要带本地导出计数优化）。
+
+4. **按根因分组，不要逐测试改**：几十个测试失败通常是几个核心函数缺失的连锁反应。
+   例：30 个 Drama 失败全部源于 `normalizedChannelModelCapability` 未按 release 选
+   注册表 + 缺 `validateDeclaredVideoProfile`；补这一处，30→5。
+
+5. **验证分层**：`go build` → `go test ./...` → `cd web && bunx tsc --noEmit` → `bun run build`。
+   前端 build 若报 `vite:prepare-out-dir`/safe-delete，是环境的批量删除保护，
+   先手动清空 `web/dist` 再构建，不是代码问题。
+
+6. **方案等价的取舍**：本地用独立号段 90001-90008 管定制迁移，上游用
+   `yingce_schema_migrations` 分表，目标等价。这类"两套实现做同一件事"时保本地，
+   把上游专属测试 `t.Skip` 并注明原因，不要为了过测试冒险改数据库核心。
+
+7. **提交**：`git commit` 时写清楚"本地保留了什么 / 融合了什么 / 验证结果 / 已知差异"。
+
+**定制分层（决定冲突风险）**：
+- 独立文件/模块（存储、批量视频、部署脚本）：零冲突，自动保留 —— 继续保持这种写法
+- 配置类（CORS/端口/默认值）：尽量走 `.env`，不硬编码进上游文件
+- 侵入式改动（在上游也会改的文件里加逻辑）：高风险，尽量抽成独立文件 + 单行 hook
 
 ## 7. 提 PR 流程
 
