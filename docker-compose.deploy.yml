@@ -54,9 +54,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,noexec,size=${YINGCE_AGENT_TMPFS_SIZE:-512m},mode=1777
+    # 群晖 DSM 的内核不支持 NanoCPUs（CPU CFS 调度），cpus/pids_limit 会让容器创建直接失败。
+    # 内存与日志限制保留，CPU 隔离交给 NAS 自身的资源监控。
     mem_limit: ${YINGCE_AGENT_MEMORY_LIMIT:-4g}
-    cpus: ${YINGCE_AGENT_CPUS:-2}
-    pids_limit: ${YINGCE_AGENT_PIDS_LIMIT:-256}
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -107,8 +107,7 @@ services:
     volumes:
       - ${CANVAS_DATA_PATH:-backend-data}:/data
       - ${CANVAS_UPDATER_SOCKET_DIR:-/run/open-ai-canvas-updater}:/run/open-ai-canvas-updater
-    cpus: ${CANVAS_BACKEND_CPUS:-2}
-    pids_limit: ${CANVAS_BACKEND_PIDS_LIMIT:-256}
+    # 同上：NAS 内核不支持 NanoCPUs，这里不写 cpus/pids_limit。
     logging:
       driver: json-file
       options:
