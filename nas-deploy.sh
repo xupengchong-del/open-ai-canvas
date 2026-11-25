@@ -342,20 +342,24 @@ fi
 echo "    已备份：\${BACKUP}（\$(du -h "\$BACKUP" | cut -f1)，明文 \$((DUMP_BYTES/1048576)) MB）"
 
 echo '--- 保留回滚镜像 ---'
-# 构建会覆盖 :server tag，先把当前可用镜像另存一份，回滚时直接切 tag，不必重新构建。
+# 回滚镜像必须取「当前正在运行」的镜像。构建会覆盖 :server tag，
+# 若直接拿 :server 备份，重试一次就会把回滚点覆盖成新版本，回滚等于没回滚。
 for image in backend web yingce-agent; do
-  if d docker image inspect "open-ai-canvas-\$image:server" >/dev/null 2>&1; then
-    d docker tag "open-ai-canvas-\$image:server" "open-ai-canvas-\$image:rollback" && echo "    已保留 open-ai-canvas-\$image:rollback"
+  src="\$(d docker inspect -f '{{.Image}}' "open-ai-canvas-\$image-1" 2>/dev/null || true)"
+  if [ -n "\$src" ]; then
+    d docker tag "\$src" "open-ai-canvas-\$image:rollback" && echo "    已保留 \$image 回滚镜像（运行中版本）"
+  elif d docker image inspect "open-ai-canvas-\$image:server" >/dev/null 2>&1; then
+    d docker tag "open-ai-canvas-\$image:server" "open-ai-canvas-\$image:rollback" && echo "    已保留 \$image 回滚镜像（:server）"
   fi
 done
-# 同时记下当前可用提交，回滚时据此 reset 代码。
+# .deployed-sha 只在启动成功后更新，所以这里记录的就是真正在跑的提交。
 if [ -f "\$DATA/.deployed-sha" ]; then
   cp "\$DATA/.deployed-sha" "\$DATA/.rollback-sha" 2>/dev/null || true
   echo "    回滚提交记录：\$(cat "\$DATA/.rollback-sha" 2>/dev/null || echo 未知)"
 fi
 
 echo '--- 镜像 ---'
-if [ '$FORCE_BUILD' = '1' ] || ! d docker image inspect open-ai-canvas-web:server >/dev/null 2>&1 || [ ! -f "\$DATA/.deployed-sha" ] || [ "\$(cat "\$DATA/.deployed-sha")" != "\$HEAD_SHA" ]; then
+if [ '$FORCE_BUILD' = '1' ] || ! d docker image inspect open-ai-canvas-web:server >/dev/null 2>&1 || [ ! -f "\$DATA/.built-sha" ] || [ "\$(cat "\$DATA/.built-sha")" != "\$HEAD_SHA" ]; then
   # NAS 只有约 3.8GB 内存：镜像必须逐个串行构建。
   # 曾经一次性 compose build 四个服务，BuildKit 并行 + Go 四核 CGO 并行把内存打爆，
   # 触发 OOM killer 与 swap 抖动，表现为部署期间整机假死、SSH 断连。
@@ -378,7 +382,7 @@ if [ '$FORCE_BUILD' = '1' ] || ! d docker image inspect open-ai-canvas-web:serve
     d docker builder prune -f --filter until=10m >/dev/null 2>&1 || true
     sync
   done
-  echo "\$HEAD_SHA" > "\$DATA/.deployed-sha"
+  echo "\$HEAD_SHA" > "\$DATA/.built-sha"
 else
   echo '    镜像已是当前提交，跳过构建（FORCE_BUILD=1 可强制）'
 fi
@@ -392,6 +396,8 @@ compose up -d --remove-orphans --wait --wait-timeout 900 || {
 
 echo '--- 状态 ---'
 compose ps
+# 只有启动成功才更新已部署提交，回滚点才不会指向没跑起来的版本。
+echo "\$HEAD_SHA" > "\$DATA/.deployed-sha"
 SCRIPT
 
   bold "健康检查"

@@ -24,7 +24,7 @@ export ALL_PROXY=socks5://127.0.0.1:7890
 
 | 分支 | 用途 | 能否推送 |
 | --- | --- | --- |
-| `local/daily` | **日常自用分支**：自己的全部改动先汇总到这里，本地 dev server 一直跑这个分支 | ❌ **绝不推送**（推上去会和 PR 重复、互相污染） |
+| `local/daily` | **日常自用分支**：自己的全部改动先汇总到这里，本地 dev server 一直跑这个分支；NAS 部署也从 `origin/local/daily` 拉代码，所以**必须推送** | ✅ 推 `origin`（仅作部署源，不开 PR） |
 | `feat/*`、`fix/*` | 单个功能或修复，**基于最新的 `upstream/main`**，只含这件事的提交 | ✅ 推到 `origin` 后开 PR |
 | `main` | 跟随上游，只用来快进 | ❌ 不直接在上面提交 |
 
@@ -183,6 +183,12 @@ v1.8.7.2 合并实战（commit `c52c483c`），照做可大幅缩短时间。
   `provider_ark_private_assets.go`、`ark_portrait_groups.go`。
 - 团队素材引用保护：删除素材时要按 `assetId` 扫描任务/任务日志，不能只按 `resourceID`；
   团队素材编辑不能改写 `CreatedBy`。实现位于 `resource_reference.go` 与 `canvas/user_data.go`。
+- NAS 编排兼容（`docker-compose.deploy.yml`）：群晖 DSM 内核不支持 NanoCPUs，
+  上游新增的 `cpus:` / `pids_limit:` 会让容器创建直接失败（`NanoCPUs can not be set`）。
+  融合时删掉这两个字段，保留 `mem_limit` 与日志限制；`read_only` / `cap_drop` 可留。
+  另外后端服务的 `mem_limit` 曾出现上游与本地各写一份，YAML 重复键会让 `compose build` 直接报错。
+- 部署脚本（`nas-deploy.sh`）：回滚镜像必须取「运行中容器」的镜像，不能取 `:server`；
+  备份要先落明文再校验，`pg_dump | gzip` 的管道会把失败掩盖成 20 字节空备份。
 
 ## 7. 提 PR 流程
 
