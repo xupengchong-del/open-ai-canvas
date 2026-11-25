@@ -18,7 +18,12 @@ func (s *Service) activeOSSSetting() (ossSettingValue, error) {
 	return validateActiveOSSSetting(setting, "管理员尚未启用 OSS", "平台 OSS 配置不完整，请联系管理员")
 }
 
-func (s *Service) activeResourceOSSSetting(userID string) (ossSettingValue, string, bool, error) {
+// activeResourceOSSSetting 解析资源写入使用的对象存储。
+// S3 是受限存储：只有显式声明视频参考图用途时才允许命中；其他调用一律不返回 S3，
+// 让资源留在服务器本地或其他已配置的 OSS。
+func (s *Service) activeResourceOSSSetting(userID string, storagePurposes ...string) (ossSettingValue, string, bool, error) {
+	purpose := firstStoragePurpose(storagePurposes)
+	s3Allowed := storagePurposeAllowsS3(purpose)
 	userSetting, value, err := s.readUserOSSSetting(userID)
 	if err != nil {
 		return ossSettingValue{}, "", false, err
@@ -27,16 +32,49 @@ func (s *Service) activeResourceOSSSetting(userID string) (ossSettingValue, stri
 	if err != nil {
 		return ossSettingValue{}, "", false, err
 	}
-	userAllowed := value.Provider != s3Provider || systemValue.AllowUserS3
+	userAllowed := !isS3Provider(value.Provider) || (s3Allowed && systemValue.AllowUserS3)
 	if userSetting != nil && value.Enabled && userAllowed {
 		value, err = validateActiveOSSSetting(value, "用户 OSS 尚未启用", "你的 OSS 配置不完整")
 		return value, firstNonEmpty(value.StorageLocationID, userSetting.ID), true, err
 	}
-	if !systemValue.Enabled {
+	if !systemValue.Enabled || (isS3Provider(systemValue.Provider) && !s3Allowed) {
 		return ossSettingValue{}, "", false, nil
 	}
 	systemValue, err = validateActiveOSSSetting(systemValue, "管理员尚未启用 OSS", "平台 OSS 配置不完整，请联系管理员")
 	return systemValue, systemValue.StorageLocationID, true, err
+}
+
+func firstStoragePurpose(values []string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func storagePurposeAllowsS3(purpose string) bool {
+	return BatchVideoStoragePurposeAllowsOSS(purpose)
+}
+
+func isS3Provider(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), s3Provider)
+}
+
+// s3OnlyStorageBlocked 判断当前配置是否只有 S3 可用，用于给出明确的受限提示。
+func (s *Service) s3OnlyStorageBlocked(userID string) (bool, error) {
+	_, systemValue, err := s.readOSSSetting()
+	if err != nil {
+		return false, err
+	}
+	if systemValue.Enabled && isS3Provider(systemValue.Provider) {
+		return true, nil
+	}
+	userSetting, userValue, err := s.readUserOSSSetting(userID)
+	if err != nil {
+		return false, err
+	}
+	return userSetting != nil && userValue.Enabled && isS3Provider(userValue.Provider) && systemValue.AllowUserS3, nil
 }
 
 func (s *Service) ossSettingForResource(userID string, resource *model.Resource) (ossSettingValue, error) {

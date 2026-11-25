@@ -68,6 +68,52 @@ func TestResourceReferenceSnapshotChunksTasksAndLogsAcrossResourceBatches(t *tes
 	}
 }
 
+func TestResourceReferenceSnapshotIncludesTeamAssetTaskReferences(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "team-asset-reference.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.MigrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	teamKey := model.TeamContentKey("team-1")
+	tasks := []model.Task{
+		{ID: "asset-task", UserID: teamKey, InputJSON: `{"assetId":"asset-1"}`, Status: model.TaskStatusRunning},
+		{ID: "other-task", UserID: teamKey, InputJSON: `{"assetId":"asset-2"}`, Status: model.TaskStatusRunning},
+	}
+	logs := []model.TaskLog{
+		{ID: "asset-log", UserID: teamKey, TaskID: "asset-task", Payload: `{"assetId":"asset-1"}`},
+	}
+	if err := db.Create(&tasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := New(db).ResourceReferenceSnapshotExcludingAssets(teamKey, []string{"asset-1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskFound, logFound := false, false
+	for _, doc := range snapshot.Documents {
+		if doc.Kind == "任务" && doc.ID == "asset-task" {
+			taskFound = true
+		}
+		if doc.Kind == "任务日志" && doc.ID == "asset-log" {
+			logFound = true
+		}
+	}
+	if !taskFound || !logFound {
+		t.Fatalf("team asset task references missing: task=%v log=%v documents=%+v", taskFound, logFound, snapshot.Documents)
+	}
+	for _, doc := range snapshot.Documents {
+		if doc.ID == "other-task" {
+			t.Fatalf("unrelated task included in team asset snapshot: %+v", doc)
+		}
+	}
+}
+
 func TestResourceReferenceSnapshotIncludesOwnedBatchVideoReferences(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "resource-reference.db")), &gorm.Config{})
 	if err != nil {

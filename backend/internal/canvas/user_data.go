@@ -94,7 +94,6 @@ func (s *Service) UpsertAssetAs(userID string, raw json.RawMessage, actorID stri
 		return UserDataSummary{}, err
 	}
 	err = s.host.WithStorageLock(func() error {
-		asset.CreatedBy = actorID
 		if asset.FolderID != "" {
 			if _, err := s.repo.AssetFolderForUser(userID, asset.FolderID); err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -106,6 +105,12 @@ func (s *Service) UpsertAssetAs(userID string, raw json.RawMessage, actorID stri
 		existing, existingErr := s.repo.AssetForUser(userID, asset.ID)
 		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 			return existingErr
+		}
+		if existing != nil {
+			// 已存在素材的贡献者归属不能被普通编辑改写，否则成员可两步绕过归档权限。
+			asset.CreatedBy = existing.CreatedBy
+		} else {
+			asset.CreatedBy = actorID
 		}
 		if existing != nil && isExportCountOnlyRewrite(existing.PayloadJSON, asset.PayloadJSON) {
 			// 本地定制：导出计数只是标记，素材库按 updated_at 排序，这类写入不能把素材顶到列表最前。

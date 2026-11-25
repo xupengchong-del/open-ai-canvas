@@ -176,6 +176,13 @@ v1.8.7.2 合并实战（commit `c52c483c`），照做可大幅缩短时间。
 - 独立文件/模块（存储、批量视频、部署脚本）：零冲突，自动保留 —— 继续保持这种写法
 - 配置类（CORS/端口/默认值）：尽量走 `.env`，不硬编码进上游文件
 - 侵入式改动（在上游也会改的文件里加逻辑）：高风险，尽量抽成独立文件 + 单行 hook
+- S3 白名单（S3 只服务视频参考图）：实现位于 `backend/internal/app/resource_oss.go`、
+  `provider_input_copy.go`、`provider_media_hydration.go`，测试在
+  `backend/internal/app/s3_storage_policy_test.go`；融合后必须跑 S3 相关测试，
+  防止上游把 S3 恢复成通用存储。旁路守卫还要核对 `resource_offload_worker.go`、
+  `provider_ark_private_assets.go`、`ark_portrait_groups.go`。
+- 团队素材引用保护：删除素材时要按 `assetId` 扫描任务/任务日志，不能只按 `resourceID`；
+  团队素材编辑不能改写 `CreatedBy`。实现位于 `resource_reference.go` 与 `canvas/user_data.go`。
 
 ## 7. 提 PR 流程
 

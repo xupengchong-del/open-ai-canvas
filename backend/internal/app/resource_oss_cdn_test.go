@@ -12,6 +12,9 @@ import (
 	"yingce/backend/internal/outbound/outboundtest"
 )
 
+// 该用例刻意保留 S3 夹具：绑定 S3 的存量资源（生产库里的历史素材）必须仍然可以按当前 CDN 策略
+// 签名并被读取，否则策略收紧当天这批素材就不可用了。「S3 只服务视频参考图」约束的是新建副本，
+// 不是拦读，因此这里不会和 S3 政策冲突。
 func TestBoundS3ResourcesUseCurrentCDNPolicyFromTheirScope(t *testing.T) {
 	outboundtest.PublicDNS(t, "s3.us-east-1.amazonaws.com", "current-media.example.com")
 	for _, test := range []struct {
@@ -100,8 +103,9 @@ func TestBoundS3ResourcesUseCurrentCDNPolicyFromTheirScope(t *testing.T) {
 					}
 				})
 			}
+			// S3 只允许服务视频参考图；这个测试验证的是绑定 S3 的图片作为视频参考图时使用当前 CDN 策略。
 			media := providerMedia{StorageKey: "resource:" + resource.ID}
-			if err := svc.hydrateProviderMedia(actor.ID, &media, providerMediaHydrationPolicy{preferURL: true}); err != nil {
+			if err := svc.hydrateProviderMedia(actor.ID, &media, providerMediaHydrationPolicy{preferURL: true}, BatchVideoPurposeVideoReference); err != nil {
 				t.Fatal(err)
 			}
 			if media.URL != req.CDNBaseURL+"/"+resource.ObjectKey || media.DataURL != "" {

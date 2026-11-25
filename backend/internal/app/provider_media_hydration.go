@@ -41,8 +41,12 @@ func (s *Service) hydrateGenerationMedia(userID string, input *canvasGenerationI
 				return err
 			}
 		}
+		storagePurpose := ""
+		if input.Mode == "video" && groupIndex == 0 {
+			storagePurpose = BatchVideoPurposeVideoReference
+		}
 		for index := range group {
-			if err := s.hydrateProviderMedia(userID, &group[index], mediaPolicy); err != nil {
+			if err := s.hydrateProviderMedia(userID, &group[index], mediaPolicy, storagePurpose); err != nil {
 				return err
 			}
 		}
@@ -53,7 +57,7 @@ func (s *Service) hydrateGenerationMedia(userID string, input *canvasGenerationI
 	return nil
 }
 
-func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, policy providerMediaHydrationPolicy) error {
+func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, policy providerMediaHydrationPolicy, storagePurposes ...string) error {
 	if !strings.HasPrefix(media.StorageKey, "resource:") {
 		if policy.explicitTransport == "url" {
 			value := strings.TrimSpace(media.URL)
@@ -108,7 +112,7 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 	}
 	useObjectURL := policy.requireURL || (policy.preferURL && resourceUsesObjectStorage(resource))
 	if useObjectURL {
-		signedURL, err := s.providerVisibleResourceURL(userID, resource)
+		signedURL, err := s.providerVisibleResourceURL(userID, resource, storagePurposes...)
 		if err != nil {
 			return fmt.Errorf("生成参考素材地址失败：%w", err)
 		}

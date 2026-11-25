@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path"
@@ -26,9 +27,28 @@ var deleteProviderInputObject = deleteOSSObject
 
 // providerVisibleResourceURL 返回上游可直接下载的地址。对象存储资源用预签名地址；
 // 本地资源（按存储策略落盘的视频）先确保存在对象存储副本，否则上游拿到的是内网平台地址。
-func (s *Service) providerVisibleResourceURL(userID string, resource *model.Resource) (string, error) {
+//
+// 这里必须严格区分「读」和「写」两种语义：
+//   - 读已存在的 S3 对象：放行。对象早已落地，读取不产生新的存储占用；生产库里有大量
+//     provider=s3 的存量素材（图片生成参考、创作对话引用、历史批量视频素材等），
+//     一律按「当前用途不是视频参考图」拦读，会让策略收紧的当天这批历史资源全部不可用。
+//   - 写/新建 S3 副本：继续严格受限。非视频参考图用途既不能新建 S3 对象，也不能把本地
+//     资源派生成 S3 副本，见下面的图片类型校验、activeResourceOSSSetting 的默认拒绝、
+//     ensureProviderInputCopyURL 的报错以及 offload worker 的取消逻辑。
+func (s *Service) providerVisibleResourceURL(userID string, resource *model.Resource, storagePurposes ...string) (string, error) {
 	if resource == nil {
 		return "", errors.New("任务参考资源为空")
+	}
+	// 读放行：provider 归一化后是 S3（含大小写/空格变体）说明对象已经存在于 S3，
+	// 不按本次用途报错，直接签发地址。
+	if isS3Provider(resource.Provider) {
+		return s.providerResourceURL(resource, time.Time{})
+	}
+	purpose := firstStoragePurpose(storagePurposes)
+	// 写受限：只有本次用途允许落 S3 时才校验「要被写入/派生的素材本身必须是图片」，
+	// 挡住把视频、音频、文档派生成 S3 副本的路径。
+	if storagePurposeAllowsS3(purpose) && (resource.Kind != "image" || !strings.HasPrefix(strings.ToLower(resource.MimeType), "image/")) {
+		return "", errors.New("S3 仅允许保存视频参考图片")
 	}
 	if resource.Provider != "local" {
 		return s.providerResourceURL(resource, time.Time{})
@@ -37,7 +57,7 @@ func (s *Service) providerVisibleResourceURL(userID string, resource *model.Reso
 	if signed, err := s.providerResourceURL(resource, time.Time{}); err == nil && s.platformReachableFromInternet() {
 		return signed, nil
 	}
-	return s.ensureProviderInputCopyURL(userID, resource)
+	return s.ensureProviderInputCopyURL(userID, resource, storagePurposes...)
 }
 
 // platformReachableFromInternet 判断服务器访问地址是否是公网可达主机；
@@ -57,12 +77,20 @@ func (s *Service) platformReachableFromInternet() bool {
 	return true
 }
 
-func (s *Service) ensureProviderInputCopyURL(userID string, resource *model.Resource) (string, error) {
-	setting, storageSettingID, enabled, err := s.activeResourceOSSSetting(userID)
+func (s *Service) ensureProviderInputCopyURL(userID string, resource *model.Resource, storagePurposes ...string) (string, error) {
+	purpose := firstStoragePurpose(storagePurposes)
+	setting, storageSettingID, enabled, err := s.activeResourceOSSSetting(userID, purpose)
 	if err != nil {
 		return "", err
 	}
 	if !enabled {
+		blocked, blockedErr := s.s3OnlyStorageBlocked(userID)
+		if blockedErr != nil {
+			return "", blockedErr
+		}
+		if blocked {
+			return "", BadAuthRequest("S3 仅允许保存视频生成实际引用的参考图；其他素材请使用服务器本地或其他对象存储")
+		}
 		return "", BadAuthRequest("参考素材需要对象存储提供上游可下载的地址，请先在后台启用存储服务，或改用公网素材链接")
 	}
 	setting = s.storageSettingWithRuntimePolicy(setting)
@@ -116,16 +144,21 @@ func (s *Service) deleteProviderInputVariants(userID string, resource *model.Res
 	if err != nil || len(variants) == 0 {
 		return
 	}
-	setting, _, enabled, err := s.activeResourceOSSSetting(userID)
-	if err != nil || !enabled {
-		return
-	}
-	setting = s.storageSettingWithRuntimePolicy(setting)
+	// 派生的 S3 副本只允许服务于视频参考图；清理时按同样用途解析配置，
+	// 否则 S3-only 环境会因为默认拒绝 S3 而永远无法删除这些副本。
 	for _, variant := range variants {
-		if variant.Provider != setting.Provider || variant.Bucket != setting.Bucket {
+		target := &model.Resource{
+			ID: resource.ID, UserID: variant.UserID, Provider: variant.Provider,
+			Endpoint: variant.Endpoint, Bucket: variant.Bucket,
+			StorageSettingID: variant.StorageSettingID, ObjectKey: variant.ObjectKey,
+		}
+		variantSetting, variantErr := s.ossSettingForResource(variant.UserID, target)
+		if variantErr != nil || variantSetting.AccessKeyID == "" || variantSetting.AccessKeySecret == "" {
+			slog.Warn("参考素材副本配置不可用，跳过清理", "resourceId", resource.ID, "variantId", variant.ID, "error", variantErr)
 			continue
 		}
-		if err := deleteProviderInputObject(setting, variant.ObjectKey); err != nil {
+		variantSetting = s.storageSettingWithRuntimePolicy(variantSetting)
+		if err := deleteProviderInputObject(variantSetting, variant.ObjectKey); err != nil {
 			log.Printf("清理参考素材副本失败 resource=%s key=%s: %v", resource.ID, variant.ObjectKey, err)
 			continue
 		}

@@ -291,7 +291,7 @@ func (s *Service) validateArkLibrarySubmission(userID string, libraryAssetID str
 
 // submitArkPortraitAsset 调用方舟 CreateAsset 提交素材，成功后进入方舟审核（processing）。
 func (s *Service) submitArkPortraitAsset(ctx context.Context, setting arkPrivateAssetSettingValue, group model.ArkPortraitGroup, asset *model.ArkPortraitAsset, resource *model.Resource) error {
-	resourceURL, err := s.providerResourceURL(resource, time.Now().Add(time.Hour))
+	resourceURL, err := s.providerVisibleResourceURL(resource.UserID, resource)
 	if err != nil {
 		return fmt.Errorf("生成素材临时地址失败：%w", err)
 	}

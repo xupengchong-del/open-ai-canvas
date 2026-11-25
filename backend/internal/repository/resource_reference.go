@@ -266,6 +266,15 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	if err != nil {
 		return snapshot, err
 	}
+	// 团队素材删除时，任务可能只记录 assetId，不记录 resourceID。
+	// 这类引用必须按素材 ID 扫描出来，再交给 app 层做内容级判定。
+	if team && len(excludingAssetIDs) > 0 {
+		assetTasks, assetErr := r.referenceTasksByAssetIDs(userID, excludingAssetIDs)
+		if assetErr != nil {
+			return snapshot, assetErr
+		}
+		tasks = mergeResourceReferenceTasks(tasks, assetTasks)
+	}
 	taskStatuses := make(map[string]model.TaskStatus, len(tasks))
 	for _, task := range tasks {
 		taskStatuses[task.ID] = task.Status
@@ -290,6 +299,13 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	taskLogs, err := r.referenceTaskLogs(userID, resourceIDs)
 	if err != nil {
 		return snapshot, err
+	}
+	if team && len(excludingAssetIDs) > 0 {
+		assetLogs, assetErr := r.referenceTaskLogsByAssetIDs(userID, excludingAssetIDs)
+		if assetErr != nil {
+			return snapshot, assetErr
+		}
+		taskLogs = mergeResourceReferenceTaskLogs(taskLogs, assetLogs)
 	}
 	for _, taskLog := range taskLogs {
 		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "任务日志", ID: taskLog.ID, Title: taskLog.Message, PrimaryJSON: taskLog.Payload, TaskStatus: taskStatuses[taskLog.TaskID]})
@@ -572,6 +588,120 @@ func (r *Repository) AssetBusinessReferences(userID string, assetID string) ([]R
 
 func (r *Repository) DeleteAssetAndResources(userID string, assetID string, resourceIDs []string, deletionJobs []model.ResourceDeletionJob, deleteReferencedResources bool) error {
 	return r.DeleteAssetsAndResources(userID, []string{assetID}, resourceIDs, deletionJobs, deleteReferencedResources)
+}
+
+func (r *Repository) referenceTasksByAssetIDs(userID string, assetIDs []string) ([]model.Task, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	var tasks []model.Task
+	if err := r.db.Select("id", "prompt", "status", "input_json", "result_json").
+		Where("user_id = ?", userID).
+		Where("input_json LIKE ? OR result_json LIKE ?", `%"assetId"%`, `%"assetId"%`).
+		Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+	wanted := make(map[string]struct{}, len(assetIDs))
+	for _, id := range assetIDs {
+		if id != "" {
+			wanted[id] = struct{}{}
+		}
+	}
+	result := make([]model.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if documentReferencesAssetID(task.InputJSON, wanted) || documentReferencesAssetID(task.ResultJSON, wanted) {
+			result = append(result, task)
+		}
+	}
+	return result, nil
+}
+
+func (r *Repository) referenceTaskLogsByAssetIDs(userID string, assetIDs []string) ([]model.TaskLog, error) {
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	var logs []model.TaskLog
+	if err := r.db.Select("id", "task_id", "message", "payload").
+		Where("user_id = ?", userID).
+		Where("payload LIKE ?", `%"assetId"%`).
+		Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	wanted := make(map[string]struct{}, len(assetIDs))
+	for _, id := range assetIDs {
+		if id != "" {
+			wanted[id] = struct{}{}
+		}
+	}
+	result := make([]model.TaskLog, 0, len(logs))
+	for _, log := range logs {
+		if documentReferencesAssetID(log.Payload, wanted) {
+			result = append(result, log)
+		}
+	}
+	return result, nil
+}
+
+func documentReferencesAssetID(raw string, ids map[string]struct{}) bool {
+	if len(ids) == 0 || !strings.Contains(raw, `"assetId"`) {
+		return false
+	}
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return false
+	}
+	var visit func(any) bool
+	visit = func(item any) bool {
+		switch typed := item.(type) {
+		case []any:
+			for _, child := range typed {
+				if visit(child) {
+					return true
+				}
+			}
+		case map[string]any:
+			if id, ok := typed["assetId"].(string); ok {
+				if _, found := ids[id]; found {
+					return true
+				}
+			}
+			for _, child := range typed {
+				if visit(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return visit(value)
+}
+
+func mergeResourceReferenceTasks(base, extra []model.Task) []model.Task {
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	result := make([]model.Task, 0, len(base)+len(extra))
+	for _, task := range append(base, extra...) {
+		if _, exists := seen[task.ID]; exists {
+			continue
+		}
+		seen[task.ID] = struct{}{}
+		result = append(result, task)
+	}
+	slices.SortFunc(result, func(left, right model.Task) int { return strings.Compare(left.ID, right.ID) })
+	return result
+}
+
+func mergeResourceReferenceTaskLogs(base, extra []model.TaskLog) []model.TaskLog {
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	result := make([]model.TaskLog, 0, len(base)+len(extra))
+	for _, log := range append(base, extra...) {
+		if _, exists := seen[log.ID]; exists {
+			continue
+		}
+		seen[log.ID] = struct{}{}
+		result = append(result, log)
+	}
+	slices.SortFunc(result, func(left, right model.TaskLog) int { return strings.Compare(left.ID, right.ID) })
+	return result
 }
 
 func (r *Repository) DeleteAssetsAndResources(userID string, assetIDs []string, resourceIDs []string, deletionJobs []model.ResourceDeletionJob, deleteReferencedResources bool) error {

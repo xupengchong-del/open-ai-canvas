@@ -94,6 +94,11 @@ func (s *Service) processResourceOffloadJob(ctx context.Context, job *model.Reso
 		s.cancelResourceOffload(job, owner, resource, "资源已删除或已不使用这份本地文件")
 		return
 	}
+	if isS3Provider(job.TargetProvider) {
+		// S3 只允许保存视频参考图派生副本，普通生成结果的异步补传必须取消。
+		s.cancelResourceOffload(job, owner, resource, "S3 仅允许保存视频参考图片")
+		return
+	}
 	// 转码会把播放副本状态写回资源行，等转码结束再切换，避免远端资源带上本地播放副本。
 	if resource.PlaybackStatus == model.PlaybackStatusProcessing {
 		s.retryResourceOffload(job, owner, job.LastErrorCode, "等待播放副本转码完成")

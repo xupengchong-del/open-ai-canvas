@@ -288,6 +288,12 @@ func verifyWorkspaceAssetLifecycle(t *testing.T, db *gorm.DB, call func(string, 
 		t.Fatalf("missing contributor: %+v, %v", asset, err)
 	}
 	put(owner, "owned-by-owner", "confirmed", 200)
+	// 成员先普通编辑，再归档：编辑不能改写贡献者归属，归档仍应被拒绝。
+	put(member, "owned-by-owner", "confirmed", 200)
+	owned, err := repository.New(db).AssetForUser(model.TeamContentKey(teamID), "owned-by-owner")
+	if err != nil || owned.CreatedBy != owner {
+		t.Fatalf("member edit rewrote contributor: %+v, %v", owned, err)
+	}
 	put(member, "owned-by-owner", "archived", 403)
 	board := base + "/canvas-projects/text-board"
 	ops := func(key string, want int, operations ...gin.H) {
