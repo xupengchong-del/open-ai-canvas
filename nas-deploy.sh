@@ -317,12 +317,29 @@ fi
 
 echo '--- 部署前备份数据库 ---'
 BACKUP="\$DATA/backups/pre-upgrade-\$(date +%Y%m%d-%H%M%S).sql.gz"
+DUMP_TMP="/tmp/canvas-preupgrade-\$\$.sql"
 d mkdir -p "\$DATA/backups"
-if compose exec -T postgres pg_dump -U open_ai_canvas -d open_ai_canvas 2>/dev/null | gzip > "\$BACKUP" 2>/dev/null && [ -s "\$BACKUP" ]; then
-  echo "    已备份：\${BACKUP}（\$(du -h "\$BACKUP" | cut -f1)）"
-else
-  echo '    备份失败：可选继续，但升级跨越 32 个官方迁移，建议先排查'
+rm -f "\$DUMP_TMP"
+# 先落明文再校验：管道里 pg_dump 失败会被 gzip 的成功掩盖，留下 20 字节的空备份。
+if ! compose exec -T postgres pg_dump -U open_ai_canvas -d open_ai_canvas > "\$DUMP_TMP"; then
+  echo '    数据库导出失败，已中止部署（不带着无效备份升级生产库）'
+  rm -f "\$DUMP_TMP"
+  exit 1
 fi
+DUMP_BYTES=\$(wc -c < "\$DUMP_TMP" | tr -d ' ')
+if [ "\${DUMP_BYTES:-0}" -lt 1048576 ]; then
+  echo "    导出内容异常：仅 \${DUMP_BYTES:-0} 字节，已中止部署"
+  head -c 400 "\$DUMP_TMP" 2>/dev/null | sed 's/^/      /'
+  rm -f "\$DUMP_TMP"
+  exit 1
+fi
+gzip -c "\$DUMP_TMP" > "\$BACKUP"
+rm -f "\$DUMP_TMP"
+if ! gzip -t "\$BACKUP" 2>/dev/null; then
+  echo '    备份压缩包校验失败，已中止部署'
+  exit 1
+fi
+echo "    已备份：\${BACKUP}（\$(du -h "\$BACKUP" | cut -f1)，明文 \$((DUMP_BYTES/1048576)) MB）"
 
 echo '--- 保留回滚镜像 ---'
 # 构建会覆盖 :server tag，先把当前可用镜像另存一份，回滚时直接切 tag，不必重新构建。

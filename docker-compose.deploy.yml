@@ -107,7 +107,6 @@ services:
     volumes:
       - ${CANVAS_DATA_PATH:-backend-data}:/data
       - ${CANVAS_UPDATER_SOCKET_DIR:-/run/open-ai-canvas-updater}:/run/open-ai-canvas-updater
-    mem_limit: ${CANVAS_BACKEND_MEMORY_LIMIT:-4g}
     cpus: ${CANVAS_BACKEND_CPUS:-2}
     pids_limit: ${CANVAS_BACKEND_PIDS_LIMIT:-256}
     logging:
