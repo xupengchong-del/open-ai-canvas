@@ -124,10 +124,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
-    # 4GB 内存的 NAS 上必须限制 backend 内存：播放转码/任务高并发会吃光内存，
-    # 触发 swap 抖动、IO 打满并拖垮整机与数据库。留出约 1.4G 给系统与其他容器。
-    mem_limit: 2400m
-    mem_reservation: 1200m
+    # 内存上限按机器内存给，写在 .env 里按机调整：4G 机器用 2400m，
+    # 12G 机器用 6g。上限的意义是转码峰值不把整机拖垮，不是常态占用。
+    mem_limit: ${CANVAS_BACKEND_MEMORY_LIMIT:-2400m}
+    mem_reservation: ${CANVAS_BACKEND_MEMORY_RESERVATION:-1200m}
 
   web:
     image: ${CANVAS_WEB_IMAGE:?请先配置 CANVAS_WEB_IMAGE（必须包含镜像 digest）}
